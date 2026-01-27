@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="de">
+
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ergebnis – Entscheidungsunterstützung</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+            <div>
+                <h1>Ergebnis der Bewertung</h1>
+                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche
+                    n. a." }}</p>
+                <span class="badge">Run-ID: {{ run_id }}</span>
+            </div>
+            <div>
+                {% set rec_class = 'neutral' %}
+                {% if recommendation == 'RPA' %}{% set rec_class = 'rpa' %}{% elif recommendation == 'IPA' %}{% set
+                rec_class = 'ipa' %}{% endif %}
+                <div class="rec {{ rec_class }}" aria-live="polite">
+                    Empfehlung: {{ recommendation if recommendation else "Unentschieden / weitere Analyse" }}
+                </div>
+            </div>
+        </header>
+
+        <!-- KPIs -->
+        <section class="grid grid-3" style="margin-top:1rem">
+            <div class="card">
+                <h3 style="margin:.25rem 0">Gesamtscore RPA</h3>
+                <div class="bar" aria-label="Gesamtscore RPA">
+                </div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score)
+                    }}</p>
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Gesamtscore IPA</h3>
+                <div class="bar" aria-label="Gesamtscore IPA">
+
+                </div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score)
+                    }}</p>
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Differenz</h3>
+                {% set diff = (total_ipa - total_rpa) %}
+                <p style="font-size:1.4rem; font-weight:800; margin:.25rem 0">{{ "%+.2f"|format(diff) }}</p>
+                <p class="muted">Schwellenwert (threshold): <span class="pill">{{ "%.2f"|format(threshold) }}</span></p>
+            </div>
+        </section>
+
+        <!-- Begründung / Transparenz -->
+        <section class="card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">Beitragsübersicht nach Kriterien</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Transparenz: gewichtete Beiträge je Kriterium für RPA/IPA.
+                Höhere Werte deuten auf stärkere Eignung hin.</p>
+            <div style="overflow:auto">
+                <table aria-describedby="tblHelp">
+                    <thead>
+                        <tr>
+                            <th>Kriterium</th>
+                            <th class="small">Gewicht</th>
+                            <th>Score RPA</th>
+                            <th>Score IPA</th>
+                            <th>Kommentar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in breakdown %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td class="small"><span class="pill">w={{ "%.2f"|format(row.weight) }}</span></td>
+                            <td>{{ "%.2f"|format(row.score_rpa) }}</td>
+                            <td>{{ "%.2f"|format(row.score_ipa) }}</td>
+                            <td class="small">{{ row.comment or "" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p id="tblHelp" class="muted" style="margin-top:.5rem">Hinweis: Beiträge sind bereits gewichtet (Bewertung ×
+                Gewicht).</p>
+        </section>
+
+        <!-- Nächste Schritte -->
+        <section class="grid grid-2" style="margin-top:1rem">
+            <div class="card">
+                <h3 style="margin:.25rem 0">Interpretation</h3>
+                {% if recommendation == 'RPA' %}
+                <p>Die Kriterienlage begünstigt <strong>regelbasierte</strong> Automatisierung. Prüfen Sie, ob
+                    Ausnahmen/Varianz gering und Daten überwiegend strukturiert sind.</p>
+                {% elif recommendation == 'IPA' %}
+                <p>Die Kriterienlage spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren
+                    sind unstrukturierte Daten, Klassifikations- oder Erkennungsschritte und variantenreiche Abläufe.
+                </p>
+                {% else %}
+                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Top-3 Einflusskriterien, ggf.
+                    Sensitivitätsanalyse (Gewichtungsvariation).</p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Empfohlene Aktionen</h3>
+                <ul style="margin:.25rem 0 0 1rem">
+                    <li>Exportieren Sie die Ergebnisse (CSV/PDF) für das Projektoffice.</li>
+                    <li>Führen Sie eine <em>Sensitivity Analysis</em> mit veränderten Gewichten durch.</li>
+                    <li>Dokumentieren Sie Annahmen (ROI, Time-to-Value) im Entscheidungsvorblatt.</li>
+                </ul>
+            </div>
+        </section>
+
+        <div class="actions">
+            <form method="get" action="{{ url_for('index') }}">
+                <button type="submit" class="secondary">Neuen Anwendungsfall bewerten</button>
+            </form>
+            <form method="post" action="{{ url_for('export_result') }}">
+                <input type="hidden" name="use_case_id" value="{{ use_case.id }}">
+                <button type="submit">Ergebnis exportieren</button>
+            </form>
+        </div>
+    </div>
+</body>
+
+</html>
