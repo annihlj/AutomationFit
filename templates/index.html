@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="de">
 
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -14,130 +13,73 @@
         <div class="topbar">
             <div>
                 <h1>Entscheidungsunterstützung: RPA vs. IPA</h1>
-                <p class="lead">Bitte erfassen Sie den Anwendungsfall und bewerten Sie die Kriterien (Likert 1–5).
+                <p class="lead">Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
                     Pflichtfelder sind mit <span class="req">*</span> gekennzeichnet.</p>
             </div>
-            <span class="badge">Prototyp • v0.1</span>
+            <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
         </div>
 
         <form class="card" method="post" action="{{ url_for('evaluate') }}">
 
-
             <!-- 1) Use-Case Metadaten -->
-            <div class="grid grid-2">
-                <fieldset>
-                    <legend>1 Anwendungsfall</legend>
-                    <label for="uc_name">Bezeichnung <span class="req">*</span></label>
-                    <input id="uc_name" name="uc_name" type="text" placeholder="z. B. Eingangsrechnungen prüfen"
-                        required />
-
-                    <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
-                    <textarea id="uc_desc" name="uc_desc"
-                        placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme" required></textarea>
-
-                    <div class="row">
-                        <div style="flex:1">
-                            <label for="industry">Branche</label>
-                            <input id="industry" name="industry" type="text"
-                                placeholder="z. B. Fertigung, Handel, Dienstleistung" />
-                        </div>
-                        <div style="flex:1">
-                            <label for="volume">Durchsatz/Volumen</label>
-                            <input id="volume" name="volume" type="text" placeholder="z. B. ~1.200 Fälle/Monat" />
-                        </div>
-                    </div>
-                    <p class="help">Tipp: Kurz & präzise. Detailtiefe ist nicht nötig – die Bewertung erfolgt über die
-                        Kriterien.</p>
-                </fieldset>
-
-                <fieldset>
-                    <legend>2) Prozesskontext</legend>
-                    <label for="systems">Beteiligte Systeme</label>
-                    <input id="systems" name="systems" type="text" placeholder="ERP, E-Mail, DMS, Webportal …" />
-
-                    <label for="data_structure">Datenstruktur</label>
-                    <select id="data_structure" name="data_structure">
-                        <option value="" selected>Bitte wählen…</option>
-                        <option value="structured">Strukturiert</option>
-                        <option value="semi">Semi-strukturiert</option>
-                        <option value="unstructured">Unstrukturiert</option>
-                    </select>
-
-                    <label for="exceptions">Ausnahmen/Varianz</label>
-                    <textarea id="exceptions" name="exceptions"
-                        placeholder="z. B. 10–15 % Sonderfälle, manuelle Prüfung notwendig"></textarea>
-
-                    <div class="row">
-                        <div style="flex:1">
-                            <label for="owner">Prozessverantwortliche:r</label>
-                            <input id="owner" name="owner" type="text" placeholder="Name/Funktion" />
-                        </div>
-                        <div style="flex:1">
-                            <label for="kpi">Relevante KPIs</label>
-                            <input id="kpi" name="kpi" type="text"
-                                placeholder="z. B. Durchlaufzeit, Fehlerquote, Kosten/Fall" />
-                        </div>
-                    </div>
-                </fieldset>
-            </div>
-
-            <!-- 3) Kriterienbewertung (Likert) -->
-            <fieldset style="margin-top:1rem">
-                <legend>3) Bewertungskriterien (Likert 1–5)</legend>
-                <p class="muted">1 = sehr niedrig/ungünstig • 3 = mittel • 5 = sehr hoch/günstig</p>
-
-                <div class="likert" aria-hidden="true" style="color:#9ca3af;font-weight:600">
-                    <div></div>
-                    <div style="text-align:center">1</div>
-                    <div style="text-align:center">2</div>
-                    <div style="text-align:center">3</div>
-                    <div style="text-align:center">4</div>
-                    <div style="text-align:center">5</div>
-                </div>
-
-                {% for c in criteria %}
-                <div class="likert">
-                    <div class="crit-name">
-                        {{ c.name }}
-                        {% if c.weight is defined %}<span class="pill" title="Gewichtung">w={{ "%.2f"|format(c.weight)
-                            }}</span>{% endif %}
-                        {% if c.help is defined %}<div class="muted">{{ c.help }}</div>{% endif %}
-                    </div>
-                    {% for v in [1,2,3,4,5] %}
-                    <div style="text-align:center">
-                        <input type="radio" id="crit_{{ c.id }}_{{ v }}" name="crit_{{ c.id }}" value="{{ v }}" required
-                            aria-label="{{ c.name }} = {{ v }}">
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endfor %}
-            </fieldset>
-
-            <!-- 4) Strategische Dimensionen -->
-            <fieldset style="margin-top:1rem">
-                <legend>4) Strategische Dimensionen</legend>
+            <fieldset>
+                <legend>Anwendungsfall</legend>
                 <div class="grid grid-2">
                     <div>
-                        <label for="roi_expectation">Erwarteter ROI (subjektiv)</label>
-                        <select id="roi_expectation" name="roi_expectation">
-                            <option value="" selected>Bitte wählen…</option>
-                            <option value="low">Niedrig (0–10%)</option>
-                            <option value="mid">Mittel (10–30%)</option>
-                            <option value="high">Hoch (&gt;30%)</option>
-                        </select>
+                        <label for="uc_name">Bezeichnung <span class="req">*</span></label>
+                        <input id="uc_name" name="uc_name" type="text" placeholder="z. B. Eingangsrechnungen prüfen"
+                            required />
                     </div>
                     <div>
-                        <label for="time_to_value">Time-to-Value</label>
-                        <select id="time_to_value" name="time_to_value">
-                            <option value="" selected>Bitte wählen…</option>
-                            <option value="short">&lt; 3 Monate</option>
-                            <option value="mid">3–6 Monate</option>
-                            <option value="long">&gt; 6 Monate</option>
-                        </select>
+                        <label for="industry">Branche</label>
+                        <input id="industry" name="industry" type="text"
+                            placeholder="z. B. Fertigung, Handel, Dienstleistung" />
                     </div>
                 </div>
-                <p class="help">Diese Angaben fließen – je nach Modell – ergänzend in die Gewichtung ein.</p>
+
+                <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
+                <textarea id="uc_desc" name="uc_desc"
+                    placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme" required></textarea>
             </fieldset>
+
+            <!-- 2) Dynamische Dimensionen und Fragen aus Datenbank -->
+            {% for dimension in dimensions %}
+            <fieldset style="margin-top:1.5rem">
+                <legend>{{ dimension.code }}. {{ dimension.name }}</legend>
+
+                {% for question in dimension.questions %}
+                <div style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
+                    <label style="font-weight:600; display:block; margin-bottom:0.5rem">
+                        {{ question.code }} - {{ question.text }}
+                        <span class="req">*</span>
+                    </label>
+
+                    {% if question.type == 'number' %}
+                    <!-- Numerische Eingabe -->
+                    <input type="number" step="0.01" name="q_{{ question.id }}" 
+                           placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}" 
+                           required style="max-width:300px">
+                    {% if question.unit %}
+                    <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
+                    {% endif %}
+
+                    {% elif question.type == 'single_choice' %}
+                    <!-- Single Choice mit Radio Buttons -->
+                    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem">
+                        {% for option in question.options %}
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; background:white; border-radius:0.25rem; border:1px solid #e5e7eb">
+                            <input type="radio" name="q_{{ question.id }}" value="{{ option.id }}" 
+                                   required {% if option.is_na %}style="margin-right:0.25rem"{% endif %}>
+                            <span>{{ option.label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+            </fieldset>
+            {% endfor %}
 
             <div class="actions">
                 <button type="reset" class="secondary">Zurücksetzen</button>

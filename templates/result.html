@@ -1,7 +1,6 @@
 <!doctype html>
 <html lang="de">
 
-
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -14,16 +13,16 @@
         <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
             <div>
                 <h1>Ergebnis der Bewertung</h1>
-                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche
-                    n. a." }}</p>
+                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche n. a." }}</p>
                 <span class="badge">Run-ID: {{ run_id }}</span>
             </div>
             <div>
                 {% set rec_class = 'neutral' %}
-                {% if recommendation == 'RPA' %}{% set rec_class = 'rpa' %}{% elif recommendation == 'IPA' %}{% set
-                rec_class = 'ipa' %}{% endif %}
+                {% if recommendation == 'RPA' %}{% set rec_class = 'rpa' %}
+                {% elif recommendation == 'IPA' %}{% set rec_class = 'ipa' %}
+                {% endif %}
                 <div class="rec {{ rec_class }}" aria-live="polite">
-                    Empfehlung: {{ recommendation if recommendation else "Unentschieden / weitere Analyse" }}
+                    Empfehlung: {{ recommendation if recommendation else "Unentschieden" }}
                 </div>
             </div>
         </header>
@@ -32,82 +31,106 @@
         <section class="grid grid-3" style="margin-top:1rem">
             <div class="card">
                 <h3 style="margin:.25rem 0">Gesamtscore RPA</h3>
-                <div class="bar" aria-label="Gesamtscore RPA">
+                {% if rpa_excluded %}
+                <div style="padding:1rem; background:#fee2e2; border-radius:0.5rem; color:#991b1b; text-align:center">
+                    <strong>❌ Ausgeschlossen</strong>
                 </div>
-                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score)
-                    }}</p>
+                {% elif total_rpa %}
+                <div style="width:{{ (total_rpa / max_score * 100)|round(0) }}%; background:#3b82f6; height:1.5rem; border-radius:0.25rem"></div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score) }}</p>
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
             </div>
             <div class="card">
                 <h3 style="margin:.25rem 0">Gesamtscore IPA</h3>
-                <div class="bar" aria-label="Gesamtscore IPA">
-
+                {% if ipa_excluded %}
+                <div style="padding:1rem; background:#fee2e2; border-radius:0.5rem; color:#991b1b; text-align:center">
+                    <strong>❌ Ausgeschlossen</strong>
                 </div>
-                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score)
-                    }}</p>
+                {% elif total_ipa %}
+                <div style="width:{{ (total_ipa / max_score * 100)|round(0) }}%; background:#10b981; height:1.5rem; border-radius:0.25rem"></div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score) }}</p>
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
             </div>
             <div class="card">
                 <h3 style="margin:.25rem 0">Differenz</h3>
+                {% if total_rpa and total_ipa %}
                 {% set diff = (total_ipa - total_rpa) %}
                 <p style="font-size:1.4rem; font-weight:800; margin:.25rem 0">{{ "%+.2f"|format(diff) }}</p>
-                <p class="muted">Schwellenwert (threshold): <span class="pill">{{ "%.2f"|format(threshold) }}</span></p>
+                <p class="muted">Schwellenwert: <span class="pill">{{ "%.2f"|format(threshold) }}</span></p>
+                {% else %}
+                <p class="muted">Nicht berechenbar</p>
+                {% endif %}
             </div>
         </section>
 
-        <!-- Begründung / Transparenz -->
+        <!-- Dimensionsübersicht -->
         <section class="card" style="margin-top:1rem">
-            <h3 style="margin:.25rem 0">Beitragsübersicht nach Kriterien</h3>
-            <p class="muted" style="margin:.25rem 0 1rem">Transparenz: gewichtete Beiträge je Kriterium für RPA/IPA.
-                Höhere Werte deuten auf stärkere Eignung hin.</p>
+            <h3 style="margin:.25rem 0">Ergebnisse nach Dimensionen</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Transparenz: Scores je Dimension für RPA und IPA.</p>
             <div style="overflow:auto">
-                <table aria-describedby="tblHelp">
+                <table>
                     <thead>
                         <tr>
-                            <th>Kriterium</th>
-                            <th class="small">Gewicht</th>
+                            <th>Dimension</th>
                             <th>Score RPA</th>
                             <th>Score IPA</th>
-                            <th>Kommentar</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for row in breakdown %}
+                        {% for dim in breakdown %}
                         <tr>
-                            <td>{{ row.name }}</td>
-                            <td class="small"><span class="pill">w={{ "%.2f"|format(row.weight) }}</span></td>
-                            <td>{{ "%.2f"|format(row.score_rpa) }}</td>
-                            <td>{{ "%.2f"|format(row.score_ipa) }}</td>
-                            <td class="small">{{ row.comment or "" }}</td>
+                            <td><strong>{{ dim.code }}.</strong> {{ dim.name }}</td>
+                            <td>
+                                {% if dim.excluded_rpa %}
+                                <span style="color:#991b1b; font-weight:600">❌ Ausgeschlossen</span>
+                                {% elif dim.score_rpa %}
+                                {{ "%.2f"|format(dim.score_rpa) }}
+                                {% else %}
+                                <span class="muted">–</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if dim.excluded_ipa %}
+                                <span style="color:#991b1b; font-weight:600">❌ Ausgeschlossen</span>
+                                {% elif dim.score_ipa %}
+                                {{ "%.2f"|format(dim.score_ipa) }}
+                                {% else %}
+                                <span class="muted">–</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <p id="tblHelp" class="muted" style="margin-top:.5rem">Hinweis: Beiträge sind bereits gewichtet (Bewertung ×
-                Gewicht).</p>
         </section>
 
-        <!-- Nächste Schritte -->
+        <!-- Interpretation -->
         <section class="grid grid-2" style="margin-top:1rem">
             <div class="card">
                 <h3 style="margin:.25rem 0">Interpretation</h3>
                 {% if recommendation == 'RPA' %}
-                <p>Die Kriterienlage begünstigt <strong>regelbasierte</strong> Automatisierung. Prüfen Sie, ob
-                    Ausnahmen/Varianz gering und Daten überwiegend strukturiert sind.</p>
+                <p>Die Bewertung begünstigt <strong>regelbasierte Automatisierung (RPA)</strong>. Prüfen Sie, ob Ausnahmen gering und Daten strukturiert sind.</p>
                 {% elif recommendation == 'IPA' %}
-                <p>Die Kriterienlage spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren
-                    sind unstrukturierte Daten, Klassifikations- oder Erkennungsschritte und variantenreiche Abläufe.
-                </p>
+                <p>Die Bewertung spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren sind unstrukturierte Daten und variantenreiche Abläufe.</p>
+                {% elif recommendation == 'Neutral' %}
+                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Einflussfaktoren und ggf. Sensitivitätsanalyse.</p>
+                {% elif recommendation == 'Keine Automatisierung' %}
+                <p style="color:#991b1b; font-weight:600">⚠️ Beide Automatisierungsarten wurden ausgeschlossen. Überprüfen Sie die Prozesseignung.</p>
                 {% else %}
-                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Top-3 Einflusskriterien, ggf.
-                    Sensitivitätsanalyse (Gewichtungsvariation).</p>
+                <p>Unvollständige Daten. Bitte prüfen Sie die Eingaben.</p>
                 {% endif %}
             </div>
             <div class="card">
                 <h3 style="margin:.25rem 0">Empfohlene Aktionen</h3>
                 <ul style="margin:.25rem 0 0 1rem">
-                    <li>Exportieren Sie die Ergebnisse (CSV/PDF) für das Projektoffice.</li>
-                    <li>Führen Sie eine <em>Sensitivity Analysis</em> mit veränderten Gewichten durch.</li>
-                    <li>Dokumentieren Sie Annahmen (ROI, Time-to-Value) im Entscheidungsvorblatt.</li>
+                    <li>Exportieren Sie die Ergebnisse für die Dokumentation.</li>
+                    <li>Führen Sie eine Detailanalyse der kritischen Dimensionen durch.</li>
+                    <li>Dokumentieren Sie Annahmen im Entscheidungsvorblatt.</li>
                 </ul>
             </div>
         </section>
@@ -117,7 +140,7 @@
                 <button type="submit" class="secondary">Neuen Anwendungsfall bewerten</button>
             </form>
             <form method="post" action="{{ url_for('export_result') }}">
-                <input type="hidden" name="use_case_id" value="{{ use_case.id }}">
+                <input type="hidden" name="assessment_id" value="{{ run_id }}">
                 <button type="submit">Ergebnis exportieren</button>
             </form>
         </div>
