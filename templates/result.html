@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ergebnis – Automation Fit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="nav-logo">
+                <img src="{{ url_for('static', filename='logo.svg') }}" alt="Automation Fit Logo">
+                <span>Automation Fit</span>
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}">Fragebogen</a>
+                <a href="{{ url_for('comparison') }}">Vergleich</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
+            <div>
+                <h1>Ergebnis der Bewertung</h1>
+                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche n. a." }}</p>
+                <span class="badge">Run-ID: {{ run_id }}</span>
+            </div>
+            <div>
+                {% set rec_class = 'neutral' %}
+                {% if recommendation == 'RPA' %}{% set rec_class = 'rpa' %}
+                {% elif recommendation == 'IPA' %}{% set rec_class = 'ipa' %}
+                {% endif %}
+                <div class="rec {{ rec_class }}" aria-live="polite">
+                    Empfehlung: {{ recommendation if recommendation else "Unentschieden" }}
+                </div>
+            </div>
+        </header>
+
+        <!-- KPIs -->
+        <section class="grid grid-3" style="margin-top:1rem">
+            <div class="card">
+                <h3 style="margin:.25rem 0">Gesamtscore RPA</h3>
+                {% if rpa_excluded %}
+                <div style="padding:1rem; background:#fee2e2; border-radius:0.5rem; color:#991b1b; text-align:center">
+                    <strong>❌ Ausgeschlossen</strong>
+                </div>
+                {% elif total_rpa %}
+                <div style="width:{{ (total_rpa / max_score * 100)|round(0) }}%; background:#3b82f6; height:1.5rem; border-radius:0.25rem"></div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score) }}</p>
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Gesamtscore IPA</h3>
+                {% if ipa_excluded %}
+                <div style="padding:1rem; background:#fee2e2; border-radius:0.5rem; color:#991b1b; text-align:center">
+                    <strong>❌ Ausgeschlossen</strong>
+                </div>
+                {% elif total_ipa %}
+                <div style="width:{{ (total_ipa / max_score * 100)|round(0) }}%; background:#10b981; height:1.5rem; border-radius:0.25rem"></div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score) }}</p>
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Differenz</h3>
+                {% if total_rpa and total_ipa %}
+                {% set diff = (total_ipa - total_rpa) %}
+                <p style="font-size:1.4rem; font-weight:800; margin:.25rem 0">{{ "%+.2f"|format(diff) }}</p>
+                <p class="muted">Schwellenwert: <span class="pill">{{ "%.2f"|format(threshold) }}</span></p>
+                {% else %}
+                <p class="muted">Nicht berechenbar</p>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Dimensionsübersicht mit Details -->
+        <section class="card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">Ergebnisse nach Dimensionen</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Klicken Sie auf eine Dimension um Details zu den Antworten und Scores zu sehen.</p>
+            
+            {% for dim in breakdown %}
+            <div class="dimension-detail">
+                <div class="dimension-header" onclick="toggleDimension('dim-{{ loop.index }}')">
+                    <h4>
+                        <span class="expand-icon" id="icon-dim-{{ loop.index }}">▶</span>
+                        <strong>{{ dim.code }}.</strong> {{ dim.name }}
+                    </h4>
+                    <div style="display:flex; gap:2rem; align-items:center">
+                        <div>
+                            <span class="muted" style="font-size:0.875rem">RPA:</span>
+                            {% if dim.excluded_rpa %}
+                            <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
+                            {% elif dim.score_rpa %}
+                            <span style="color:#60a5fa; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{ "%.2f"|format(dim.score_rpa) }}</span>
+                            {% else %}
+                            <span class="muted" style="margin-left:0.5rem">–</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <span class="muted" style="font-size:0.875rem">IPA:</span>
+                            {% if dim.excluded_ipa %}
+                            <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
+                            {% elif dim.score_ipa %}
+                            <span style="color:#34d399; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{ "%.2f"|format(dim.score_ipa) }}</span>
+                            {% else %}
+                            <span class="muted" style="margin-left:0.5rem">–</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="dimension-content" id="content-dim-{{ loop.index }}">
+                    {% if dim.answers %}
+                    <div style="padding:0.5rem 0">
+                        <div class="answer-item" style="background:#1a2332; font-weight:600; font-size:0.875rem">
+                            <div>Frage</div>
+                            <div style="text-align:center">Antwort</div>
+                            <div style="text-align:center">RPA Score</div>
+                            <div style="text-align:center">IPA Score</div>
+                        </div>
+                        {% for answer in dim.answers %}
+                        <div class="answer-item">
+                            <div class="question-text">
+                                <span style="color:var(--accent); font-weight:600">{{ answer.question_code }}</span>
+                                <span style="margin-left:0.5rem">{{ answer.question_text }}</span>
+                            </div>
+                            <div class="answer-value" style="text-align:center">
+                                {{ answer.answer }}
+                            </div>
+                            <div style="text-align:center">
+                                {% if answer.rpa_score == 'AUSSCHLUSS' %}
+                                <span class="score-badge excluded">❌ Ausschluss</span>
+                                {% elif answer.rpa_score == 'N/A' %}
+                                <span class="score-badge na">N/A</span>
+                                {% elif answer.rpa_score == '–' %}
+                                <span class="muted">–</span>
+                                {% else %}
+                                <span class="score-badge rpa">{{ "%.1f"|format(answer.rpa_score) }}</span>
+                                {% endif %}
+                            </div>
+                            <div style="text-align:center">
+                                {% if answer.ipa_score == 'AUSSCHLUSS' %}
+                                <span class="score-badge excluded">❌ Ausschluss</span>
+                                {% elif answer.ipa_score == 'N/A' %}
+                                <span class="score-badge na">N/A</span>
+                                {% elif answer.ipa_score == '–' %}
+                                <span class="muted">–</span>
+                                {% else %}
+                                <span class="score-badge ipa">{{ "%.1f"|format(answer.ipa_score) }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div style="padding:1rem; text-align:center; color:var(--muted)">
+                        Keine Antworten für diese Dimension
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+
+        <script>
+        function toggleDimension(id) {
+            const content = document.getElementById('content-' + id);
+            const icon = document.getElementById('icon-' + id);
+            
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                icon.classList.remove('expanded');
+            } else {
+                content.classList.add('expanded');
+                icon.classList.add('expanded');
+            }
+        }
+        </script>
+
+        <!-- Interpretation -->
+        <section class="grid grid-2" style="margin-top:1rem">
+            <div class="card">
+                <h3 style="margin:.25rem 0">Interpretation</h3>
+                {% if recommendation == 'RPA' %}
+                <p>Die Bewertung begünstigt <strong>regelbasierte Automatisierung (RPA)</strong>. Prüfen Sie, ob Ausnahmen gering und Daten strukturiert sind.</p>
+                {% elif recommendation == 'IPA' %}
+                <p>Die Bewertung spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren sind unstrukturierte Daten und variantenreiche Abläufe.</p>
+                {% elif recommendation == 'Neutral' %}
+                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Einflussfaktoren und ggf. Sensitivitätsanalyse.</p>
+                {% elif recommendation == 'Keine Automatisierung' %}
+                <p style="color:#991b1b; font-weight:600">⚠️ Beide Automatisierungsarten wurden ausgeschlossen. Überprüfen Sie die Prozesseignung.</p>
+                {% else %}
+                <p>Unvollständige Daten. Bitte prüfen Sie die Eingaben.</p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Empfohlene Aktionen</h3>
+                <ul style="margin:.25rem 0 0 1rem">
+                    <li>Exportieren Sie die Ergebnisse für die Dokumentation.</li>
+                    <li>Führen Sie eine Detailanalyse der kritischen Dimensionen durch.</li>
+                    <li>Dokumentieren Sie Annahmen im Entscheidungsvorblatt.</li>
+                </ul>
+            </div>
+        </section>
+
+        <div class="actions">
+            <form method="get" action="{{ url_for('index') }}">
+                <button type="submit" class="secondary">Neuen Anwendungsfall bewerten</button>
+            </form>
+            <form method="post" action="{{ url_for('export_result') }}">
+                <input type="hidden" name="assessment_id" value="{{ run_id }}">
+                <button type="submit">Ergebnis exportieren</button>
+            </form>
+        </div>
+    </div>
+</body>
+
+</html>

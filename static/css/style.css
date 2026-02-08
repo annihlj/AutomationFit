@@ -1,0 +1,814 @@
+/* === Global Styles === */
+:root {
+    /* Helle, freundliche Basis */
+    --bg: #f8fafc;
+    /* Sehr helles Grau (fast Weiß) für den Hintergrund */
+    --card: #ffffff;
+    /* Reines Weiß für Karten */
+    --muted: #64748b;
+    /* Mittleres Grau für Nebentexte */
+    --text: #1e293b;
+    /* Dunkles Grau (Slate) für Haupttext - besser lesbar als reines Schwarz */
+
+    /* Akzentfarben - Professionell & Wissenschaftlich */
+    --accent: #0284c7;
+    /* Seriöses Blau (Sky 600) */
+    --accent-light: #e0f2fe;
+    /* Ganz helles Blau für Hintergründe */
+
+    /* Status Farben */
+    --ok: #16a34a;
+    /* Grün */
+    --warn: #d97706;
+    /* Orange (etwas dunkler für Kontrast auf Weiß) */
+    --bad: #dc2626;
+    /* Rot */
+
+    /* Struktur */
+    --line: #e2e8f0;
+    /* Helles Grau für Trennlinien */
+    --focus: #38bdf8;
+    /* Fokus-Ring Farbe */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    background-color: var(--bg);
+    color: var(--text);
+    /* Keine dunklen Gradients mehr, sondern sauberes Flat Design */
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+}
+
+.container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 1rem;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    /* Etwas weniger rund wirkt professioneller */
+    box-shadow: var(--shadow-md);
+    padding: 1.5rem;
+    /* Etwas mehr Luft */
+}
+
+h1 {
+    font-size: 1.75rem;
+    margin: .5rem 0 .5rem;
+    color: #0f172a;
+    /* Fast Schwarz für Überschriften */
+    font-weight: 700;
+}
+
+h3 {
+    margin: .5rem 0;
+    color: #334155;
+}
+
+p.lead,
+.muted {
+    color: var(--muted);
+}
+
+/* === Layout Helpers === */
+.grid {
+    display: grid;
+    gap: 1.5rem;
+    /* Mehr Abstand für "Luftigkeit" */
+}
+
+@media (min-width: 900px) {
+    .grid-2 {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .grid-3 {
+        grid-template-columns: 2fr 1fr 1fr;
+    }
+}
+
+.row {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+}
+
+.actions {
+    display: flex;
+    gap: .75rem;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+}
+
+/* === Typography & Elements === */
+label {
+    display: block;
+    font-weight: 600;
+    color: #334155;
+    margin: .5rem 0 .35rem;
+}
+
+.muted {
+    color: var(--muted);
+    font-size: .925rem;
+}
+
+.pill {
+    display: inline-block;
+    padding: .25rem .75rem;
+    border-radius: 999px;
+    background: #f1f5f9;
+    /* Helles Grau */
+    border: 1px solid #cbd5e1;
+    color: #475569;
+    font-size: .78rem;
+    font-weight: 600;
+}
+
+input[type="text"],
+input[type="number"],
+textarea,
+select {
+    width: 100%;
+    padding: .8rem .95rem;
+    border: 2px solid var(--line);
+    border-radius: 8px;
+    outline: none;
+    font: inherit;
+    font-size: .95rem;
+    background: #fff;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+/* === Form Elements === */
+input[type="text"],
+textarea,
+select {
+    width: 100%;
+    padding: .75rem .85rem;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    /* Solides Grau */
+    color: var(--text);
+    border-radius: 8px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+textarea {
+    min-height: 110px;
+    resize: vertical;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+    border-color: var(--focus);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+    /* Subtiler blauer Schein */
+}
+
+fieldset {
+    border: 2px solid #f0f0f0;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+}
+
+legend {
+    padding: 0 .5rem;
+    color: #334155;
+    font-weight: 700;
+    background: var(--bg);
+    /* Damit die Linie unterbrochen wird */
+}
+
+/* === Buttons === */
+button {
+    border: 0;
+    border-radius: 8px;
+    padding: .75rem 1.25rem;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    /* Solides Blau statt Gradient wirkt moderner */
+    color: #ffffff;
+    transition: background 0.2s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+button:hover {
+    background: #0369a1;
+    /* Dunkleres Blau bei Hover */
+}
+
+button.secondary {
+    background: #ffffff;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    box-shadow: none;
+}
+
+button.secondary:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+/* === Topbar === */
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.badge {
+    border: 1px solid var(--line);
+    padding: .3rem .6rem;
+    border-radius: 6px;
+    color: var(--muted);
+    font-weight: 600;
+    background: #f8fafc;
+    font-size: 0.85rem;
+}
+
+.likert:last-child {
+    border-bottom: none;
+}
+
+.likert:hover {
+    background-color: #f8fafc;
+    /* Hover Effekt für Zeilen */
+}
+
+.likert .crit-name {
+    font-weight: 600;
+    line-height: 1.3;
+    color: #334155;
+}
+
+/* === Results Page === */
+.rec {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    border-radius: 8px;
+    padding: .5rem .75rem;
+    font-weight: 700;
+}
+
+.rec.rpa {
+    background: #dcfce7;
+    /* Sehr helles Grün */
+    border: 1px solid #86efac;
+    color: #15803d;
+}
+
+.rec.ipa {
+    background: #e0f2fe;
+    /* Sehr helles Blau */
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+}
+
+.rec.neutral {
+    background: #fef3c7;
+    /* Sehr helles Gelb/Orange */
+    border: 1px solid #fcd34d;
+    color: #b45309;
+}
+
+.bar {
+    height: 12px;
+    background: #e2e8f0;
+    /* Hellgrauer Hintergrund für leere Balken */
+    border-radius: 999px;
+    overflow: hidden;
+    border: none;
+    /* Kein Border nötig */
+}
+
+.bar>span {
+    display: block;
+    height: 100%;
+}
+
+.bar .rpa {
+    background: #22c55e;
+    /* Frisches Grün */
+}
+
+.bar .ipa {
+    background: #0ea5e9;
+    /* Frisches Blau */
+}
+
+/* === Tables === */
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+th,
+td {
+    padding: .75rem .75rem;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+}
+
+th {
+    color: #475569;
+    font-weight: 700;
+    background-color: #f8fafc;
+    /* Header leicht abgesetzt */
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.05em;
+}
+
+td.small {
+    color: var(--muted);
+    font-size: .9rem;
+}
+
+/* === Utility === */
+.req {
+    color: var(--accent);
+    /* Blau statt Rot für Pflichtfelder wirkt weniger aggressiv */
+    font-weight: 700;
+}
+
+.help {
+    color: var(--muted);
+    font-size: .85rem;
+    margin-top: 0.25rem;
+}
+
+/* === Navigation Styles === */
+.navbar {
+    background: #ffffff;
+    border-bottom: 1px solid var(--line);
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.nav-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
+.nav-logo {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none;
+    color: #0f172a;
+    font-weight: 700;
+    font-size: 1.25rem;
+}
+
+.nav-logo img {
+    height: 40px;
+    width: 40px;
+    border-radius: 8px;
+}
+
+.nav-logo-placeholder {
+    width: 40px;
+    height: 40px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 1.25rem;
+    color: white;
+}
+
+.nav-links {
+    display: flex;
+    gap: 0.5rem;
+    flex: 1;
+}
+
+.nav-links a {
+    text-decoration: none;
+    color: #64748b;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: all 0.2s;
+    font-weight: 500;
+}
+
+.nav-links a:hover {
+    background: #f1f5f9;
+    color: var(--accent);
+}
+
+.nav-links a.active {
+    background: var(--accent-light);
+    color: var(--accent);
+    /* Dunkleres Blau für aktiven Link */
+    font-weight: 600;
+}
+
+/* === Collapsible Dimension Details === */
+.dimension-detail {
+    margin-top: 1rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.dimension-header {
+    background: #f8fafc;
+    padding: 1rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s;
+    border-bottom: 1px solid transparent;
+}
+
+.dimension-header:hover {
+    background: #f1f5f9;
+}
+
+.dimension-header h4 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #334155;
+}
+
+.expand-icon {
+    transition: transform 0.3s;
+    color: var(--muted);
+    font-size: 1.25rem;
+}
+
+.expand-icon.expanded {
+    transform: rotate(90deg);
+    color: var(--accent);
+}
+
+.dimension-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+    background: #fff;
+}
+
+.dimension-content.expanded {
+    max-height: 1000px;
+    border-top: 1px solid var(--line);
+}
+
+.answer-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 1rem;
+    align-items: center;
+}
+
+.answer-item:last-child {
+    border-bottom: none;
+}
+
+.answer-item .question-text {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.answer-item .answer-value {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.answer-item .score-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-align: center;
+}
+
+.score-badge.rpa {
+    background: #eff6ff;
+    color: #3b82f6;
+    border: 1px solid #dbeafe;
+}
+
+.score-badge.ipa {
+    background: #ecfdf5;
+    color: #10b981;
+    border: 1px solid #d1fae5;
+}
+
+.score-badge.excluded {
+    background: #fef2f2;
+    color: #ef4444;
+    border: 1px solid #fee2e2;
+}
+
+.score-badge.na {
+    background: #f1f5f9;
+    color: #94a3b8;
+    border: 1px solid #e2e8f0;
+}
+
+/* === Comparison Table === */
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.comparison-table th,
+.comparison-table td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+}
+
+.comparison-table th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    border-top: 1px solid var(--line);
+}
+
+.comparison-table tr {
+    transition: background 0.2s;
+}
+
+.comparison-table tbody tr:hover {
+    background: #f8fafc;
+}
+
+.comparison-table .score-cell {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: #0f172a;
+}
+
+.comparison-table .recommendation-badge {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.recommendation-badge.rpa {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.recommendation-badge.ipa {
+    background: #ecfdf5;
+    color: #059669;
+}
+
+.recommendation-badge.neutral {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.view-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.view-link:hover {
+    text-decoration: underline;
+    color: #0369a1;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 4rem 1rem;
+    color: var(--muted);
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 2px dashed var(--line);
+}
+
+.empty-state svg {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 1rem;
+    opacity: 0.4;
+    color: #94a3b8;
+}
+
+/* =========================================================
+   Likert Scale (horizontal, labels above, long labels safe)
+   ========================================================= */
+
+/* Wrapper nur noch als Abstand, kein Grid */
+.likert {
+    margin-top: .75rem;
+    padding: 0;
+    border: 0;
+}
+
+/* Die Reihe der Optionen */
+.likert-row {
+    display: flex;
+    align-items: stretch;
+    /* alle Items gleiche Höhe */
+    justify-content: space-between;
+    gap: 1.25rem;
+    position: relative;
+    padding: .25rem .25rem 1rem;
+}
+
+/* feine Linie unter den Kreisen */
+.likert-row::after {
+    content: "";
+    position: absolute;
+    left: .5rem;
+    right: .5rem;
+    bottom: 11px;
+    /* Mitte vom 22px-Kreis */
+    height: 1px;
+    background: var(--line);
+    z-index: 0;
+}
+
+/* Ein Item = Label oben + Kreis unten */
+.likert-item {
+    flex: 1 1 0;
+    min-width: 86px;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    /* Label-Zeile nimmt Höhe, Kreis bleibt unten */
+    justify-items: center;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    z-index: 1;
+    padding: 0 .25rem;
+}
+
+/* Label oben – robust für lange Texte */
+.likert-label {
+    align-self: end;
+    width: 100%;
+    color: var(--muted);
+    font-size: .82rem;
+    line-height: 1.15rem;
+    margin-bottom: .6rem;
+
+    /* lange Labels korrekt umbrechen */
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+/* Native Radio unsichtbar, bleibt aber zugänglich */
+.likert-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+/* Kreis */
+.likert-circle {
+    width: 22px;
+    height: 22px;
+    border-radius: 9999px;
+    border: 2px solid #94a3b8;
+    /* passt zu deinem Slate-Look */
+    background: transparent;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.likert-item:hover .likert-circle {
+    transform: scale(1.06);
+}
+
+/* Fokus */
+.likert-input:focus-visible+.likert-circle {
+    outline: 3px solid rgba(56, 189, 248, .45);
+    /* var(--focus) */
+    outline-offset: 4px;
+}
+
+/* Selected */
+.likert-input:checked+.likert-circle {
+    border-color: currentColor;
+    box-shadow: inset 0 0 0 6px currentColor;
+}
+
+/* NA neutral (optional) */
+.likert-item.is-na {
+    color: var(--muted) !important;
+}
+
+/* Farben (wie Screenshot: rot → orange → gelb → lime → grün) */
+.likert-row.likert-5 .likert-item:nth-child(1) {
+    color: var(--bad);
+}
+
+/* rot */
+.likert-row.likert-5 .likert-item:nth-child(2) {
+    color: #f97316;
+}
+
+/* orange */
+.likert-row.likert-5 .likert-item:nth-child(3) {
+    color: #f59e0b;
+}
+
+/* gelb */
+.likert-row.likert-5 .likert-item:nth-child(4) {
+    color: #84cc16;
+}
+
+/* lime */
+.likert-row.likert-5 .likert-item:nth-child(5) {
+    color: var(--ok);
+}
+
+/* grün */
+
+/* 7er Skala: letzte zwei dunkler */
+.likert-row.likert-7 .likert-item:nth-child(1) {
+    color: var(--bad);
+}
+
+.likert-row.likert-7 .likert-item:nth-child(2) {
+    color: #f97316;
+}
+
+.likert-row.likert-7 .likert-item:nth-child(3) {
+    color: #f59e0b;
+}
+
+.likert-row.likert-7 .likert-item:nth-child(4) {
+    color: #a3e635;
+}
+
+.likert-row.likert-7 .likert-item:nth-child(5) {
+    color: var(--ok);
+}
+
+.likert-row.likert-7 .likert-item:nth-child(6) {
+    color: #16a34a;
+}
+
+.likert-row.likert-7 .likert-item:nth-child(7) {
+    color: #15803d;
+}
+
+/* Kleine Screens: lieber horizontal scrollen als quetschen */
+@media (max-width:700px) {
+    .likert-row {
+        overflow-x: auto;
+        gap: 1rem;
+        padding-bottom: 1.25rem;
+    }
+
+    .likert-row::after {
+        left: 0;
+        right: 0;
+    }
+
+    .likert-item {
+        min-width: 96px;
+    }
+}

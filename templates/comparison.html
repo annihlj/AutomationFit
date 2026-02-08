@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Vergleich – Automation Fit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="nav-logo">
+                <img src="{{ url_for('static', filename='logo.svg') }}" alt="Automation Fit Logo">
+                <span>Automation Fit</span>
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}">Fragebogen</a>
+                <a href="{{ url_for('comparison') }}" class="active">Vergleich</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header>
+            <h1>Assessment-Vergleich</h1>
+            <p class="lead">Übersicht aller bisherigen Bewertungen, sortiert nach Gesamtscore</p>
+        </header>
+
+        <div class="card" style="margin-top:1.5rem">
+            {% if assessments %}
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>Prozess</th>
+                        <th>Branche</th>
+                        <th>Datum</th>
+                        <th>RPA Score</th>
+                        <th>IPA Score</th>
+                        <th>Empfehlung</th>
+                        <th>Aktionen</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for assessment in assessments %}
+                    <tr>
+                        <td>
+                            <strong>{{ assessment.process_name }}</strong>
+                        </td>
+                        <td>
+                            <span class="muted">{{ assessment.industry or '–' }}</span>
+                        </td>
+                        <td>
+                            <span class="muted">{{ assessment.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                        </td>
+                        <td class="score-cell">
+                            {% if assessment.rpa_excluded %}
+                            <span style="color:#f87171; font-weight:600">❌</span>
+                            {% elif assessment.total_rpa %}
+                            <span style="color:#60a5fa">{{ "%.2f"|format(assessment.total_rpa) }}</span>
+                            {% else %}
+                            <span class="muted">–</span>
+                            {% endif %}
+                        </td>
+                        <td class="score-cell">
+                            {% if assessment.ipa_excluded %}
+                            <span style="color:#f87171; font-weight:600">❌</span>
+                            {% elif assessment.total_ipa %}
+                            <span style="color:#34d399">{{ "%.2f"|format(assessment.total_ipa) }}</span>
+                            {% else %}
+                            <span class="muted">–</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set rec_class = 'neutral' %}
+                            {% if assessment.recommendation == 'RPA' %}{% set rec_class = 'rpa' %}
+                            {% elif assessment.recommendation == 'IPA' %}{% set rec_class = 'ipa' %}
+                            {% endif %}
+                            <span class="recommendation-badge {{ rec_class }}">
+                                {{ assessment.recommendation }}
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('view_assessment', assessment_id=assessment.id) }}" class="view-link">
+                                Details anzeigen →
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3>Noch keine Assessments vorhanden</h3>
+                <p>Füllen Sie den Fragebogen aus, um Ihr erstes Assessment zu erstellen.</p>
+                <div style="margin-top:1rem">
+                    <a href="{{ url_for('index') }}" style="display:inline-block; padding:0.75rem 1.5rem; background:var(--accent); color:white; text-decoration:none; border-radius:8px; font-weight:600">
+                        Fragebogen starten
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if assessments %}
+        <div class="actions" style="margin-top:1.5rem">
+            <a href="{{ url_for('index') }}" style="display:inline-block; padding:0.75rem 1.5rem; background:var(--card); color:var(--text); text-decoration:none; border-radius:8px; border:1px solid var(--line); font-weight:600">
+                Neues Assessment erstellen
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</body>
+
+</html>

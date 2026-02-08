@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Fragebogen – Automation Fit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="nav-logo">
+                <img src="{{ url_for('static', filename='logo.svg') }}" alt="Automation Fit Logo">
+                <span>Automation Fit</span>
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="active">Fragebogen</a>
+                <a href="{{ url_for('comparison') }}">Vergleich</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="topbar">
+            <div>
+                <h1>Entscheidungsunterstützung: RPA vs. IPA</h1>
+                <p class="lead">Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
+                    Pflichtfelder sind mit <span class="req">*</span> gekennzeichnet.</p>
+            </div>
+            <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
+        </div>
+
+        <form class="card" method="post" action="{{ url_for('evaluate') }}">
+
+            <!-- 1) Use-Case Metadaten -->
+            <fieldset>
+                <legend>Anwendungsfall</legend>
+                <div class="grid grid-2">
+                    <div>
+                        <label for="uc_name">Bezeichnung <span class="req">*</span></label>
+                        <input id="uc_name" name="uc_name" type="text" placeholder="z. B. Eingangsrechnungen prüfen"
+                            required />
+                    </div>
+                    <div>
+                        <label for="industry">Branche</label>
+                        <input id="industry" name="industry" type="text"
+                            placeholder="z. B. Fertigung, Handel, Dienstleistung" />
+                    </div>
+                </div>
+
+                <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
+                <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme"
+                    required></textarea>
+            </fieldset>
+
+            <!-- 2) Dynamische Dimensionen und Fragen aus Datenbank -->
+            {% for dimension in dimensions %}
+            <fieldset style="margin-top:1.5rem">
+                <legend>{{ dimension.code }}. {{ dimension.name }}</legend>
+
+                {% for question in dimension.questions %}
+                <div style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
+                    <label style="font-weight:600; display:block; margin-bottom:0.5rem">
+                        {{ question.code }} - {{ question.text }}
+                        <span class="req">*</span>
+                    </label>
+
+                    {% if question.type == 'number' %}
+                    <!-- Numerische Eingabe -->
+                    <input type="number" name="q_{{ question.id }}" min="0" step="1"
+                        placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}" required
+                        style="max-width:300px" />
+                    {% if question.unit %}
+                    <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
+                    {% endif %}
+
+                    {% elif question.type == 'single_choice' %}
+                    <div class="likert" role="radiogroup" aria-label="{{ question.code }}">
+                        <div class="likert-row likert-{{ question.options|length }}">
+                            {% for option in question.options %}
+                            <label class="likert-item {% if option.is_na %}is-na{% endif %}">
+                                <span class="likert-label">{{ option.label }}</span>
+
+                                <input class="likert-input" type="radio" name="q_{{ question.id }}"
+                                    value="{{ option.id }}" required />
+
+                                <!-- der Kreis -->
+                                <span class="likert-circle" aria-hidden="true"></span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+            </fieldset>
+            {% endfor %}
+
+            <div class="actions">
+                <button type="reset" class="secondary">Zurücksetzen</button>
+                <button type="submit">Bewertung berechnen</button>
+            </div>
+        </form>
+    </div>
+</body>
+
+</html>
