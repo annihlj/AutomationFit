@@ -38,8 +38,8 @@
                 </div>
 
                 <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
-                <textarea id="uc_desc" name="uc_desc"
-                    placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme" required></textarea>
+                <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme"
+                    required></textarea>
             </fieldset>
 
             <!-- 2) Dynamische Dimensionen und Fragen aus Datenbank -->
@@ -56,23 +56,28 @@
 
                     {% if question.type == 'number' %}
                     <!-- Numerische Eingabe -->
-                    <input type="number" step="0.01" name="q_{{ question.id }}" 
-                           placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}" 
-                           required style="max-width:300px">
+                    <input type="number" name="q_{{ question.id }}" min="0" step="1"
+                        placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}" required
+                        style="max-width:300px" />
                     {% if question.unit %}
                     <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
                     {% endif %}
 
                     {% elif question.type == 'single_choice' %}
-                    <!-- Single Choice mit Radio Buttons -->
-                    <div style="display:flex; flex-direction:column; gap:0.5rem; margin-top:0.5rem">
-                        {% for option in question.options %}
-                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; padding:0.5rem; background:white; border-radius:0.25rem; border:1px solid #e5e7eb">
-                            <input type="radio" name="q_{{ question.id }}" value="{{ option.id }}" 
-                                   required {% if option.is_na %}style="margin-right:0.25rem"{% endif %}>
-                            <span>{{ option.label }}</span>
-                        </label>
-                        {% endfor %}
+                    <div class="likert" role="radiogroup" aria-label="{{ question.code }}">
+                        <div class="likert-row likert-{{ question.options|length }}">
+                            {% for option in question.options %}
+                            <label class="likert-item {% if option.is_na %}is-na{% endif %}">
+                                <span class="likert-label">{{ option.label }}</span>
+
+                                <input class="likert-input" type="radio" name="q_{{ question.id }}"
+                                    value="{{ option.id }}" required />
+
+                                <!-- der Kreis -->
+                                <span class="likert-circle" aria-hidden="true"></span>
+                            </label>
+                            {% endfor %}
+                        </div>
                     </div>
                     {% endif %}
                 </div>

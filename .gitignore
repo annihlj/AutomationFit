@@ -1,0 +1,37 @@
+# --- Python Internals ---
+# Kompilierter Python-Code (braucht niemand im Repo)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- Virtuelle Umgebungen ---
+# Ignoriert den Ordner, in dem deine Libraries installiert sind
+venv/
+env/
+.venv/
+.env/
+
+# --- Datenbanken (WICHTIG für dich) ---
+# Ignoriert SQLite Datenbank-Dateien
+*.db
+*.sqlite3
+*.sqlite
+
+# --- Flask Spezifisch ---
+# Der Instance-Ordner enthält oft Configs oder lokale DBs
+instance/
+.webassets-cache
+
+# --- Umgebungsvariablen & Geheimnisse ---
+# NIEMALS Passwörter oder API-Keys hochladen!
+.env
+.flaskenv
+
+# --- IDE & Betriebssystem ---
+# Einstellungen deines Editors (VS Code, PyCharm etc.)
+.idea/
+.vscode/
+*.swp
+
+# Mac OS Müll
+.DS_Store
