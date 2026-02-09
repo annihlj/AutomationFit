@@ -69,7 +69,8 @@
                 <div class="dimension-panel" id="dimension-panel-{{ dimension.id }}" role="region"
                     aria-labelledby="dimension-toggle-{{ dimension.id }}">
                     {% for question in dimension.questions %}
-                    <div class="question-item" data-question-id="{{ question.id }}" style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
+                    <div class="question-item" data-question-id="{{ question.id }}"
+                        style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
                         <label style="font-weight:600; display:block; margin-bottom:0.5rem">
                             {{ question.code }} - {{ question.text }}
                             <span class="req">*</span>
@@ -131,6 +132,54 @@
                     panel.hidden = expanded;
                     if (chevron) chevron.textContent = expanded ? '▸' : '▾';
                 });
+
+                // Validation: require all questions in a dimension if any question in that dimension was answered
+                const form = document.querySelector('form');
+                if (form) {
+                    form.addEventListener('submit', (e) => {
+                        // clear previous errors
+                        document.querySelectorAll('.question-item.error').forEach(el => el.classList.remove('error'));
+                        document.querySelectorAll('.field-error').forEach(el => el.remove());
+
+                        let firstError = null;
+                        const dimensions = document.querySelectorAll('.dimension');
+                        dimensions.forEach(dim => {
+                            const questionItems = dim.querySelectorAll('.question-item');
+                            let anyAnswered = false;
+
+                            questionItems.forEach(q => {
+                                const qid = q.dataset.questionId;
+                                const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
+                                const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
+                                if ((numberInput && numberInput.value.trim() !== '') || radioChecked) {
+                                    anyAnswered = true;
+                                }
+                            });
+
+                            if (anyAnswered) {
+                                questionItems.forEach(q => {
+                                    const qid = q.dataset.questionId;
+                                    const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
+                                    const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
+                                    const answered = (numberInput && numberInput.value.trim() !== '') || radioChecked;
+                                    if (!answered) {
+                                        q.classList.add('error');
+                                        const msg = document.createElement('div');
+                                        msg.className = 'field-error';
+                                        msg.textContent = 'Bitte beantworten.';
+                                        q.appendChild(msg);
+                                        if (!firstError) firstError = q;
+                                    }
+                                });
+                            }
+                        });
+
+                        if (firstError) {
+                            e.preventDefault();
+                            firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    });
+                }
             });
         });
     </script>

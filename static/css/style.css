@@ -291,7 +291,8 @@ button.secondary:hover {
 
 /* Question validation visuals */
 .question-item.error {
-    border: 1px solid #fecaca; /* light red */
+    border: 1px solid #fecaca;
+    /* light red */
     background: #fff7f7;
 }
 
