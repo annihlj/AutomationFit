@@ -69,6 +69,12 @@ class Question(db.Model):
     unit = db.Column(db.String(20), nullable=True)
     scale_id = db.Column(db.Integer, db.ForeignKey("scale.id"), nullable=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
+    
+    # Neue Felder für Filterlogik
+    is_filter_question = db.Column(db.Boolean, default=False)
+    depends_on_question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=True)
+    depends_on_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
+    filter_description = db.Column(db.Text, nullable=True)  # Beschreibung der Filterlogik
 
     __table_args__ = (
         db.UniqueConstraint("questionnaire_version_id", "code", name="uq_question_code"),
@@ -77,6 +83,9 @@ class Question(db.Model):
     # Relationships
     scale = db.relationship('Scale', backref='questions')
     option_scores = db.relationship('OptionScore', backref='question', lazy=True)
+    dependent_questions = db.relationship('Question', 
+                                         backref=db.backref('parent_question', remote_side=[id]),
+                                         foreign_keys=[depends_on_question_id])
 
 
 class OptionScore(db.Model):
@@ -190,3 +199,18 @@ class EconomicMetric(db.Model):
 
     # Relationships
     assessment_obj = db.relationship('Assessment', backref='economic_metrics')
+
+
+class Hint(db.Model):
+    """Hinweise für bestimmte Antworten"""
+    __tablename__ = "hint"
+    id = db.Column(db.Integer, primary_key=True)
+    question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=False)
+    scale_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
+    automation_type = db.Column(db.String(10), nullable=True)  # RPA/IPA/NULL (für beide)
+    hint_text = db.Column(db.Text, nullable=False)
+    hint_type = db.Column(db.String(20), default="info")  # info, warning, error
+    
+    # Relationships
+    question_obj = db.relationship('Question', backref='hints')
+    scale_option = db.relationship('ScaleOption', backref='hints')

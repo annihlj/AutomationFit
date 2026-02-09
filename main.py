@@ -136,7 +136,7 @@ def evaluate():
         # Frage-IDs haben Format "q_<question_id>"
         if key.startswith('q_'):
             question_id = int(key.split('_')[1])
-            question = Question.query.get(question_id)
+            question = db.session.get(Question, question_id)
             
             if not question:
                 continue
@@ -163,7 +163,10 @@ def evaluate():
     # 4. Berechne Ergebnisse
     total_result = ScoringService.calculate_assessment_results(assessment.id)
     
-    # 5. Bereite Daten für Ergebnisseite vor
+    # 5. Hole wirtschaftliche Kennzahlen
+    economic_metrics = ScoringService.get_economic_metrics(assessment.id)
+    
+    # 6. Bereite Daten für Ergebnisseite vor
     dimensions = Dimension.query.filter_by(
         questionnaire_version_id=qv.id
     ).order_by(Dimension.sort_order).all()
@@ -205,7 +208,8 @@ def evaluate():
             'industry': process.industry
         },
         'run_id': f"ASS-{assessment.id}",
-        'breakdown': breakdown
+        'breakdown': breakdown,
+        'economic_metrics': economic_metrics  # Neu!
     }
     
     return render_template('result.html', **result_data)
@@ -278,14 +282,14 @@ def view_assessment(assessment_id):
     
     # Hole Assessment
     assessment = Assessment.query.get_or_404(assessment_id)
-    process = Process.query.get(assessment.process_id)
+    process = db.session.get(Process, assessment.process_id)
     total_result = TotalResult.query.filter_by(assessment_id=assessment_id).first()
     
     if not total_result:
         return "Assessment wurde noch nicht ausgewertet", 404
     
     # Hole Dimensionen
-    qv = QuestionnaireVersion.query.get(assessment.questionnaire_version_id)
+    qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
     dimensions = Dimension.query.filter_by(
         questionnaire_version_id=qv.id
     ).order_by(Dimension.sort_order).all()
@@ -321,7 +325,7 @@ def view_assessment(assessment_id):
                 ipa_score = None
                 
                 if question.question_type == 'single_choice' and answer.scale_option_id:
-                    option = ScaleOption.query.get(answer.scale_option_id)
+                    option = db.session.get(ScaleOption, answer.scale_option_id)
                     answer_text = option.label
                     
                     # Hole Scores

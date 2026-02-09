@@ -27,7 +27,8 @@
         <header style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem">
             <div>
                 <h1>Ergebnis der Bewertung</h1>
-                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche n. a." }}</p>
+                <p class="lead">Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche
+                    n. a." }}</p>
                 <span class="badge">Run-ID: {{ run_id }}</span>
             </div>
             <div>
@@ -50,8 +51,11 @@
                     <strong>❌ Ausgeschlossen</strong>
                 </div>
                 {% elif total_rpa %}
-                <div style="width:{{ (total_rpa / max_score * 100)|round(0) }}%; background:#3b82f6; height:1.5rem; border-radius:0.25rem"></div>
-                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score) }}</p>
+                <div
+                    style="width:{{ (total_rpa / max_score * 100)|round(0) }}%; background:#3b82f6; height:1.5rem; border-radius:0.25rem">
+                </div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_rpa) }} / {{ "%.2f"|format(max_score)
+                    }}</p>
                 {% else %}
                 <p class="muted">Nicht verfügbar</p>
                 {% endif %}
@@ -63,8 +67,11 @@
                     <strong>❌ Ausgeschlossen</strong>
                 </div>
                 {% elif total_ipa %}
-                <div style="width:{{ (total_ipa / max_score * 100)|round(0) }}%; background:#10b981; height:1.5rem; border-radius:0.25rem"></div>
-                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score) }}</p>
+                <div
+                    style="width:{{ (total_ipa / max_score * 100)|round(0) }}%; background:#10b981; height:1.5rem; border-radius:0.25rem">
+                </div>
+                <p class="muted" style="margin:.4rem 0 0">{{ "%.2f"|format(total_ipa) }} / {{ "%.2f"|format(max_score)
+                    }}</p>
                 {% else %}
                 <p class="muted">Nicht verfügbar</p>
                 {% endif %}
@@ -84,8 +91,9 @@
         <!-- Dimensionsübersicht mit Details -->
         <section class="card" style="margin-top:1rem">
             <h3 style="margin:.25rem 0">Ergebnisse nach Dimensionen</h3>
-            <p class="muted" style="margin:.25rem 0 1rem">Klicken Sie auf eine Dimension um Details zu den Antworten und Scores zu sehen.</p>
-            
+            <p class="muted" style="margin:.25rem 0 1rem">Klicken Sie auf eine Dimension um Details zu den Antworten und
+                Scores zu sehen.</p>
+
             {% for dim in breakdown %}
             <div class="dimension-detail">
                 <div class="dimension-header" onclick="toggleDimension('dim-{{ loop.index }}')">
@@ -99,7 +107,8 @@
                             {% if dim.excluded_rpa %}
                             <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
                             {% elif dim.score_rpa %}
-                            <span style="color:#60a5fa; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{ "%.2f"|format(dim.score_rpa) }}</span>
+                            <span style="color:#60a5fa; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{
+                                "%.2f"|format(dim.score_rpa) }}</span>
                             {% else %}
                             <span class="muted" style="margin-left:0.5rem">–</span>
                             {% endif %}
@@ -109,14 +118,15 @@
                             {% if dim.excluded_ipa %}
                             <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
                             {% elif dim.score_ipa %}
-                            <span style="color:#34d399; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{ "%.2f"|format(dim.score_ipa) }}</span>
+                            <span style="color:#34d399; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{
+                                "%.2f"|format(dim.score_ipa) }}</span>
                             {% else %}
                             <span class="muted" style="margin-left:0.5rem">–</span>
                             {% endif %}
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="dimension-content" id="content-dim-{{ loop.index }}">
                     {% if dim.answers %}
                     <div style="padding:0.5rem 0">
@@ -140,10 +150,15 @@
                                 <span class="score-badge excluded">❌ Ausschluss</span>
                                 {% elif answer.rpa_score == 'N/A' %}
                                 <span class="score-badge na">N/A</span>
-                                {% elif answer.rpa_score == '–' %}
+                                {% elif answer.rpa_score == '–' or answer.rpa_score is none %}
                                 <span class="muted">–</span>
                                 {% else %}
-                                <span class="score-badge rpa">{{ "%.1f"|format(answer.rpa_score) }}</span>
+                                {% set _r = answer.rpa_score %}
+                                {% if _r is number %}
+                                <span class="score-badge rpa">{{ "%.1f"|format(_r) }}</span>
+                                {% else %}
+                                <span class="muted">–</span>
+                                {% endif %}
                                 {% endif %}
                             </div>
                             <div style="text-align:center">
@@ -151,10 +166,15 @@
                                 <span class="score-badge excluded">❌ Ausschluss</span>
                                 {% elif answer.ipa_score == 'N/A' %}
                                 <span class="score-badge na">N/A</span>
-                                {% elif answer.ipa_score == '–' %}
+                                {% elif answer.ipa_score == '–' or answer.ipa_score is none %}
                                 <span class="muted">–</span>
                                 {% else %}
-                                <span class="score-badge ipa">{{ "%.1f"|format(answer.ipa_score) }}</span>
+                                {% set _i = answer.ipa_score %}
+                                {% if _i is number %}
+                                <span class="score-badge ipa">{{ "%.1f"|format(_i) }}</span>
+                                {% else %}
+                                <span class="muted">–</span>
+                                {% endif %}
                                 {% endif %}
                             </div>
                         </div>
@@ -170,19 +190,114 @@
             {% endfor %}
         </section>
 
+        <!-- Wirtschaftliche Kennzahlen (falls vorhanden) -->
+        {% if economic_metrics %}
+        <section class="card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">💰 Wirtschaftliche Kennzahlen</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Berechnete Werte basierend auf Ihren Angaben</p>
+
+            <div class="grid grid-3" style="gap:1rem">
+                <!-- ROI -->
+                {% if 'roi' in economic_metrics %}
+                <div
+                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
+                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Return on Investment (ROI)
+                    </div>
+                    <div
+                        style="font-size:2rem; font-weight:700; color:{{ 'var(--ok)' if economic_metrics.roi.value > 0 else 'var(--bad)' }}">
+                        {{ "{:+.1%}".format(economic_metrics.roi.value) }}
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">
+                        {% if economic_metrics.roi.value > 1.0 %}
+                        ✅ Sehr rentabel
+                        {% elif economic_metrics.roi.value > 0.5 %}
+                        ✅ Rentabel
+                        {% elif economic_metrics.roi.value > 0.2 %}
+                        ⚠️ Mäßig rentabel
+                        {% elif economic_metrics.roi.value > 0 %}
+                        ⚠️ Gering rentabel
+                        {% else %}
+                        ❌ Nicht rentabel
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Personeller Nutzen -->
+                {% if 'personeller_nutzen' in economic_metrics %}
+                <div
+                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
+                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Personeller Nutzen</div>
+                    <div style="font-size:2rem; font-weight:700; color:var(--accent)">
+                        {{ "{:,.0f}".format(economic_metrics.personeller_nutzen.value) }} €
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">pro Jahr</div>
+                </div>
+                {% endif %}
+
+                <!-- FTE-Einsparung -->
+                {% if 'fte_einsparung' in economic_metrics %}
+                <div
+                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
+                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">FTE-Einsparung</div>
+                    <div style="font-size:2rem; font-weight:700; color:var(--accent)">
+                        {{ "%.2f"|format(economic_metrics.fte_einsparung.value) }}
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">Vollzeitäquivalente</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="grid grid-2" style="gap:1rem; margin-top:1rem">
+                <!-- Initiale Fixkosten -->
+                {% if 'initiale_fixkosten' in economic_metrics %}
+                <div
+                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
+                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Initiale Fixkosten</div>
+                    <div style="font-size:1.5rem; font-weight:700; color:var(--text)">
+                        {{ "{:,.2f}".format(economic_metrics.initiale_fixkosten.value) }} €
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">Einmalige Investition</div>
+                </div>
+                {% endif %}
+
+                <!-- Variable Kosten -->
+                {% if 'variable_kosten_jahr' in economic_metrics %}
+                <div
+                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
+                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Variable Kosten</div>
+                    <div style="font-size:1.5rem; font-weight:700; color:var(--text)">
+                        {{ "{:,.2f}".format(economic_metrics.variable_kosten_jahr.value) }} €
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">pro Jahr</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div
+                style="margin-top:1rem; padding:1rem; background:rgba(56,189,248,0.1); border-radius:8px; border:1px solid rgba(56,189,248,0.3)">
+                <p style="margin:0; font-size:0.875rem; color:var(--text)">
+                    ℹ️ <strong>Hinweis:</strong> Diese Kennzahlen basieren auf Ihren Schätzungen und dienen als
+                    Orientierung.
+                    Für eine detaillierte Business-Case-Berechnung sollten weitere Faktoren berücksichtigt werden.
+                </p>
+            </div>
+        </section>
+        {% endif %}
+
         <script>
-        function toggleDimension(id) {
-            const content = document.getElementById('content-' + id);
-            const icon = document.getElementById('icon-' + id);
-            
-            if (content.classList.contains('expanded')) {
-                content.classList.remove('expanded');
-                icon.classList.remove('expanded');
-            } else {
-                content.classList.add('expanded');
-                icon.classList.add('expanded');
+            function toggleDimension(id) {
+                const content = document.getElementById('content-' + id);
+                const icon = document.getElementById('icon-' + id);
+
+                if (content.classList.contains('expanded')) {
+                    content.classList.remove('expanded');
+                    icon.classList.remove('expanded');
+                } else {
+                    content.classList.add('expanded');
+                    icon.classList.add('expanded');
+                }
             }
-        }
         </script>
 
         <!-- Interpretation -->
@@ -190,13 +305,17 @@
             <div class="card">
                 <h3 style="margin:.25rem 0">Interpretation</h3>
                 {% if recommendation == 'RPA' %}
-                <p>Die Bewertung begünstigt <strong>regelbasierte Automatisierung (RPA)</strong>. Prüfen Sie, ob Ausnahmen gering und Daten strukturiert sind.</p>
+                <p>Die Bewertung begünstigt <strong>regelbasierte Automatisierung (RPA)</strong>. Prüfen Sie, ob
+                    Ausnahmen gering und Daten strukturiert sind.</p>
                 {% elif recommendation == 'IPA' %}
-                <p>Die Bewertung spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren sind unstrukturierte Daten und variantenreiche Abläufe.</p>
+                <p>Die Bewertung spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren
+                    sind unstrukturierte Daten und variantenreiche Abläufe.</p>
                 {% elif recommendation == 'Neutral' %}
-                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Einflussfaktoren und ggf. Sensitivitätsanalyse.</p>
+                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Einflussfaktoren und ggf.
+                    Sensitivitätsanalyse.</p>
                 {% elif recommendation == 'Keine Automatisierung' %}
-                <p style="color:#991b1b; font-weight:600">⚠️ Beide Automatisierungsarten wurden ausgeschlossen. Überprüfen Sie die Prozesseignung.</p>
+                <p style="color:#991b1b; font-weight:600">⚠️ Beide Automatisierungsarten wurden ausgeschlossen.
+                    Überprüfen Sie die Prozesseignung.</p>
                 {% else %}
                 <p>Unvollständige Daten. Bitte prüfen Sie die Eingaben.</p>
                 {% endif %}
