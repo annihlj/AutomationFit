@@ -113,13 +113,12 @@ def get_shared_dimension_ids():
     if not qv:
         return []
     
-    # Dimensionen 1 (Plattformverfügbarkeit) und 2 (Organisatorisch)
+    # Nur Dimensionen 1 (Plattformverfügbarkeit) und 2 (Organisatorisch) sind shared
     dimensions = Dimension.query.filter_by(
         questionnaire_version_id=qv.id
     ).filter(
-        Dimension.code.in_(['1', '7'])
+        Dimension.code.in_(['1','2'])
     ).all()
-    
     return [d.id for d in dimensions]
 
 
@@ -936,7 +935,7 @@ def view_assessment(assessment_id):
                 'code': dimension.code,
                 'name': dimension.name,
                 'calc_method': dimension.calc_method,
-                'is_shared': dimension.code in ['1', '7'],
+                'is_shared': dimension.code in ['1', '7'],  # FIX: Nur Dimension 1 (Plattformverfügbarkeit und Umsetzungsreife) und 7 (Wirtschaft) sind shared
                 'rpa_score': None,
                 'ipa_score': None,
                 'rpa_excluded': False,

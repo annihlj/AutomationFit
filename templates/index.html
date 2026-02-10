@@ -96,30 +96,33 @@
             <!-- Gemeinsame Dimensionen Option -->
             <fieldset style="margin-top:1.5rem; background:#f0f9ff; border: 2px solid #3b82f6;">
                 <legend style="color:#1e40af; font-weight:600;">
-                    🔗 Gemeinsame Unternehmens-Dimensionen
+                    Übergeordnete Eingaben
                 </legend>
                 <div style="padding:0.5rem 0.75rem 0.75rem 0.75rem;">
-                    <div style="display:flex; align-items:center; gap:2.2rem; margin-bottom:0.5rem; min-height:32px;">
+                    <div <div
+                        style="display: flex; align-items: center; gap: 2.2rem; margin-bottom: 0.2rem; min-height: 32px; width: 100%;">
                         <label class="toggle-switch" style="flex-shrink:0;">
                             <input type="checkbox" name="use_shared_dimensions" id="use_shared_dimensions" />
                             <span class="toggle-slider"></span>
                         </label>
                         <div style="margin-left:0.5rem;">
-                            <strong style="font-size:1rem;">Eingaben für "Plattformverfügbarkeit" gemeinsam
-                                speichern</strong>
-                            <br>
-                            <small style="color:#6b7280; font-size:0.93em;">
-                                Wenn aktiviert, werden die Antworten der <b>Dimension 1 (Plattformverfügbarkeit)</b> und
-                                <b>Dimension 2 (Organisatorisch)</b> übergreifend gespeichert und bei jedem neuen
-                                Assessment automatisch vorausgefüllt. Diese Option eignet sich für unternehmensweite
-                                Einstellungen, die sich selten ändern.
-                            </small>
+                            <b>
+                                Eingaben für "Plattformverfügbarkeit und Umsetzungsreife" und "Organisatorisch"
+                                gemeinsam speichern
+                                <span style="cursor: pointer; margin-left: 0.4em;"
+                                    title="Wenn aktiviert, werden die Antworten der Dimension 1 (Plattformverfügbarkeit und Umsetzungsreife) und Dimension 2 (Organisatorisch) übergreifend gespeichert und bei jedem neuen Assessment automatisch vorausgefüllt. Diese Option eignet sich für unternehmensweite Einstellungen, die sich selten ändern.">
+                                    <span
+                                        style="display: inline-block; width: 1.1em; height: 1.1em; border-radius: 50%; background: #e0e7ef; color: #2563eb; text-align: center; font-weight: bold; font-size: 0.95em; line-height: 1.1em; vertical-align: middle;">i</span>
+                                </span>
+                            </b>
                         </div>
                     </div>
-                    <button type="button" id="reset-shared-btn" class="btn-secondary"
-                        style="display:none; margin-left:62px; margin-top:0.2rem;">
-                        🗑️ Gemeinsame Eingaben zurücksetzen
-                    </button>
+                    <div style="display: flex; justify-content: flex-end; width: 100%;">
+                        <button type="button" id="reset-shared-btn" class="btn-secondary"
+                            style="display:none; margin-top:0.2rem;">
+                            🗑️ Gemeinsame Eingaben zurücksetzen
+                        </button>
+                    </div>
                 </div>
             </fieldset>
 
@@ -405,8 +408,42 @@
                 dimIds.forEach(id => updateDimensionStatus(id));
             }
 
+            // ----- Multiple Choice: Reset bei "Keine der genannten" oder "Keine Angabe" -----
+            function handleMultipleChoiceExclusivity(checkbox) {
+                if (!checkbox.classList.contains('checkbox-input')) return;
+
+                const questionId = checkbox.dataset.questionId;
+                const optionCode = checkbox.dataset.optionCode;
+                const checkboxGroup = checkbox.closest('.checkbox-group');
+
+                if (!checkboxGroup) return;
+
+                // Prüfe ob "Keine der genannten" (NONE) oder "Keine Angabe" (NA/KA) gewählt wurde
+                if ((optionCode === 'NONE' || optionCode === 'NA' || optionCode === 'KA') && checkbox.checked) {
+                    // Deaktiviere alle anderen Checkboxen in dieser Frage
+                    checkboxGroup.querySelectorAll(`input[data-question-id="${questionId}"]`).forEach(cb => {
+                        if (cb !== checkbox && cb.checked) {
+                            cb.checked = false;
+                        }
+                    });
+                } else if (checkbox.checked) {
+                    // Wenn eine normale Option gewählt wird, deaktiviere "Keine der genannten" / "Keine Angabe"
+                    checkboxGroup.querySelectorAll(`input[data-question-id="${questionId}"]`).forEach(cb => {
+                        const code = cb.dataset.optionCode;
+                        if ((code === 'NONE' || code === 'NA' || code === 'KA') && cb.checked) {
+                            cb.checked = false;
+                        }
+                    });
+                }
+            }
+
             // ----- Events -----
             form.addEventListener("change", (e) => {
+                // Multiple Choice Exklusivität behandeln
+                if (e.target.type === 'checkbox') {
+                    handleMultipleChoiceExclusivity(e.target);
+                }
+
                 applyAllVisibility();
                 const qid = e.target.dataset.questionId;
                 if (qid) showHintsForSelected(qid);
@@ -494,25 +531,26 @@
                     }
                 });
 
-                // Reset Button Click Handler (für beide Dimensionen)
+                // Reset Button Click Handler (leert den gesamten Fragebogen)
                 if (resetSharedBtn) {
                     resetSharedBtn.addEventListener('click', function () {
-                        if (confirm('Möchten Sie wirklich alle gemeinsamen Eingaben zurücksetzen?')) {
-                            sharedDimensionIds.forEach(id => {
-                                const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
-                                if (dimPanel) {
-                                    dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
-                                        input.value = '';
-                                    });
-                                    dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
-                                        input.checked = false;
-                                    });
-                                    dimPanel.querySelectorAll('select').forEach(select => {
-                                        select.selectedIndex = 0;
-                                    });
-                                }
+                        if (confirm('Möchten Sie wirklich alle Eingaben im Fragebogen zurücksetzen?')) {
+                            document.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                                input.value = '';
+                            });
+                            document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                                input.checked = false;
+                            });
+                            document.querySelectorAll('select').forEach(select => {
+                                select.selectedIndex = 0;
                             });
                             updateAllDimensionStatuses();
+                            if (sharedToggle) {
+                                sharedToggle.checked = false;
+                                localStorage.setItem('use_shared_dimensions', 'false');
+                                updateResetButton();
+                                highlightSharedDimensions(false);
+                            }
                         }
                     });
                 }
@@ -522,6 +560,11 @@
             applyAllVisibility();
             questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
             updateAllDimensionStatuses();
+
+            // Wirtschaftliche Dimension immer leeren beim Seitenaufruf
+            document.querySelectorAll('.economic-metric input[type="number"]').forEach(input => {
+                input.value = '';
+            });
         });
     </script>
 </body>

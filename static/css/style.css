@@ -1,3 +1,32 @@
+.score-bar {
+    width: 100%;
+    height: 18px;
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+    border: none;
+    margin-bottom: 0.5rem;
+}
+
+.score-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    transition: width 0.3s ease;
+}
+
+.score-bar-fill.bad {
+    background: linear-gradient(90deg, #f87171 0%, #f87171 100%);
+}
+
+.score-bar-fill.warn {
+    background: linear-gradient(90deg, #facc15 0%, #fbbf24 100%);
+}
+
+.score-bar-fill.ok {
+    background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
+}
+
 /* === Global Styles === */
 :root {
     /* Helle, freundliche Basis */
@@ -784,24 +813,9 @@ td.small {
 }
 
 /* Farben (5er Skala) */
-.likert-row.likert-5 .likert-item:nth-child(1) {
-    color: var(--bad);
-}
 
-.likert-row.likert-5 .likert-item:nth-child(2) {
-    color: #f97316;
-}
-
-.likert-row.likert-5 .likert-item:nth-child(3) {
-    color: #f59e0b;
-}
-
-.likert-row.likert-5 .likert-item:nth-child(4) {
-    color: #84cc16;
-}
-
-.likert-row.likert-5 .likert-item:nth-child(5) {
-    color: var(--ok);
+.likert-row.likert-5 .likert-item {
+    color: var(--muted);
 }
 
 /* 7er Skala */

@@ -42,30 +42,8 @@ class ScoringService:
             if dimension.calc_method == "economic_score":
                 # Spezielle Behandlung für wirtschaftliche Dimension
                 ScoringService._calculate_economic_dimension(assessment_id, dimension)
-            elif dimension.code == "2":
-                # Organisatorische Dimension: Berechne einmal und verwende für beide RPA und IPA
-                ScoringService._calculate_dimension_result(
-                    assessment_id, dimension, "RPA"
-                )
-                # Kopiere das RPA-Ergebnis für IPA
-                rpa_result = DimensionResult.query.filter_by(
-                    assessment_id=assessment_id,
-                    dimension_id=dimension.id,
-                    automation_type="RPA"
-                ).first()
-                
-                if rpa_result:
-                    ipa_result = DimensionResult(
-                        assessment_id=assessment_id,
-                        dimension_id=dimension.id,
-                        automation_type="IPA",
-                        mean_score=rpa_result.mean_score,
-                        is_excluded=rpa_result.is_excluded,
-                        excluded_by_question_id=rpa_result.excluded_by_question_id
-                    )
-                    db.session.add(ipa_result)
             else:
-                # Normale Berechnung für RPA und IPA
+                # Für alle anderen Dimensionen (inkl. organisatorisch) beide Automation-Typen berechnen
                 for automation_type in ["RPA", "IPA"]:
                     ScoringService._calculate_dimension_result(
                         assessment_id, dimension, automation_type
@@ -218,6 +196,10 @@ class ScoringService:
 
         required = ["1.6", "7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"]
         missing = [c for c in required if c not in values]
+        # Sonderfall: nur 1.6 fehlt -> Default setzen und weiterrechnen
+        if missing == ["1.6"]:
+            values["1.6"] = 1
+            missing = []  # optional, nur zur Klarheit
         if missing:
             print(f"⚠️ Wirtschaftlichkeit: Werte fehlen: {missing} - Keine Berechnung möglich")
             # Erstelle leere DimensionResults ohne Score
@@ -287,9 +269,9 @@ class ScoringService:
                 unit=unit
             ))
 
-        # ROI -> Score
+        # ROI -> Score (kein Ausschluss mehr bei negativem ROI)
         if roi < 0:
-            economic_score, is_excluded = None, True
+            economic_score, is_excluded = 1.0, False  # Schlechter Score statt Ausschluss
         elif roi < 0.05:
             economic_score, is_excluded = 1.0, False
         elif roi < 0.20:
@@ -315,36 +297,35 @@ class ScoringService:
         print(f"✅ Wirtschaftlichkeit: ROI={roi:.2%}, Score={economic_score}, Excluded={is_excluded}")
     @staticmethod
     def _calculate_total_result(assessment_id):
-        """Berechnet das Gesamt-Ergebnis"""
-        
+        """Berechnet das Gesamt-Ergebnis (nur Dimensionen 2-6 werden gemittelt)"""
         # Hole alle Dimension-Ergebnisse
         dim_results_rpa = DimensionResult.query.filter_by(
             assessment_id=assessment_id,
             automation_type="RPA"
         ).all()
-        
         dim_results_ipa = DimensionResult.query.filter_by(
             assessment_id=assessment_id,
             automation_type="IPA"
         ).all()
-        
-        # RPA berechnen
-        rpa_excluded = any(dr.is_excluded for dr in dim_results_rpa)
+
+        # Nur Dimensionen 2-6 berücksichtigen
+        dim_ids_2_6 = [d.id for d in Dimension.query.filter(Dimension.code.in_(["2","3","4","5","6"])).all()]
+
+        rpa_excluded = any(dr.is_excluded and dr.excluded_by_question_id is not None and dr.dimension_id in dim_ids_2_6 for dr in dim_results_rpa)
         rpa_scores = [dr.mean_score for dr in dim_results_rpa 
-                      if not dr.is_excluded and dr.mean_score is not None]
+                      if not dr.is_excluded and dr.mean_score is not None and dr.dimension_id in dim_ids_2_6]
         total_rpa = sum(rpa_scores) / len(rpa_scores) if rpa_scores else None
-        
-        # IPA berechnen
-        ipa_excluded = any(dr.is_excluded for dr in dim_results_ipa)
+
+        ipa_excluded = any(dr.is_excluded and dr.excluded_by_question_id is not None and dr.dimension_id in dim_ids_2_6 for dr in dim_results_ipa)
         ipa_scores = [dr.mean_score for dr in dim_results_ipa 
-                      if not dr.is_excluded and dr.mean_score is not None]
+                      if not dr.is_excluded and dr.mean_score is not None and dr.dimension_id in dim_ids_2_6]
         total_ipa = sum(ipa_scores) / len(ipa_scores) if ipa_scores else None
-        
+
         # Empfehlung bestimmen
         recommendation = ScoringService._determine_recommendation(
             total_rpa, total_ipa, rpa_excluded, ipa_excluded
         )
-        
+
         # Speichere Gesamt-Ergebnis
         total_result = TotalResult(
             assessment_id=assessment_id,
@@ -355,7 +336,6 @@ class ScoringService:
             recommendation=recommendation
         )
         db.session.add(total_result)
-        
         return total_result
     
     @staticmethod
