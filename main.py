@@ -1,8 +1,8 @@
 """
-AutomationFit - Phase 2, 3 & 4 Implementierung
+AutomationFit - Phase 2, 3 & 4 Implementierung (KORRIGIERT)
 Umfasst:
 - Phase 2: Partial Completion (Dimensionen optional)
-- Phase 3: Filterlogik UI + Speicherung
+- Phase 3: Filterlogik UI + Speicherung (KORRIGIERT)
 - Phase 4: Korrekte Berechnung + Wirtschaftlichkeit
 """
 
@@ -15,7 +15,8 @@ from io import StringIO
 from extensions import db
 from models.database import (
     QuestionnaireVersion, Dimension, Question, ScaleOption,
-    Process, Assessment, Answer, DimensionResult, TotalResult, OptionScore, Hint
+    Process, Assessment, Answer, DimensionResult, TotalResult, OptionScore, Hint, QuestionCondition,
+    SharedDimensionAnswer, EconomicMetric
 )
 from services.scoring_service import ScoringService
 from seed_data import seed_data
@@ -44,79 +45,345 @@ def init_database():
         print("✅ Datenbank-Tabellen erstellt")
         seed_data()
 
+def build_answers_map(assessment_id: int):
+    """
+    Rückgabe:
+      answers_map[qid] = {
+        "numeric": float|None,
+        "single": int|None,
+        "multi": [int, ...]   # falls du multiple_choice als mehrere Answer-Zeilen speicherst
+      }
+    """
+    rows = Answer.query.filter_by(assessment_id=assessment_id).all()
+    answers_map = {}
+
+    for a in rows:
+        qid = a.question_id
+        if qid not in answers_map:
+            answers_map[qid] = {"numeric": None, "single": None, "multi": []}
+
+        if a.numeric_value is not None:
+            answers_map[qid]["numeric"] = a.numeric_value
+        if a.scale_option_id is not None:
+            # Wenn du multiple_choice als mehrere Answer-Datensätze pro Frage speicherst:
+            answers_map[qid]["multi"].append(a.scale_option_id)
+            # und als Single setzen wir den letzten Wert (für single_choice ok):
+            answers_map[qid]["single"] = a.scale_option_id
+
+    # multi deduplizieren
+    for qid in answers_map:
+        answers_map[qid]["multi"] = sorted(list(set(answers_map[qid]["multi"])))
+
+    return answers_map
+
+
+def build_hints_map(questionnaire_version_id: int):
+    """
+    Rückgabe:
+      hints_map[qid][option_id] = [{"text": "...", "type": "info|warning|error"}, ...]
+    """
+    hints = (
+        Hint.query
+        .join(Question, Hint.question_id == Question.id)
+        .filter(Question.questionnaire_version_id == questionnaire_version_id)
+        .all()
+    )
+
+    hints_map = {}
+    for h in hints:
+        qid = h.question_id
+        opt_id = h.scale_option_id  # kann None sein
+        if qid not in hints_map:
+            hints_map[qid] = {}
+        if opt_id is None:
+            continue
+        hints_map[qid].setdefault(opt_id, []).append({
+            "text": h.hint_text,
+            "type": h.hint_type
+        })
+    return hints_map
+
 
 # ============================================
-# Hilfsfunktion: Filterlogik anwenden
+# Gemeinsame Dimensionen - Hilfsfunktionen
+# ============================================
+def get_shared_dimension_ids():
+    """Gibt die IDs der Dimensionen zurück, die gemeinsam gespeichert werden können (Dim 1 & 2)"""
+    qv = QuestionnaireVersion.query.filter_by(is_active=True).first()
+    if not qv:
+        return []
+    
+    # Dimensionen 1 (Plattformverfügbarkeit) und 2 (Organisatorisch)
+    dimensions = Dimension.query.filter_by(
+        questionnaire_version_id=qv.id
+    ).filter(
+        Dimension.code.in_(['1', '2'])
+    ).all()
+    
+    return [d.id for d in dimensions]
+
+
+def load_shared_dimension_answers(dimension_id):
+    """Lädt gemeinsame Antworten für eine Dimension"""
+    shared_answers = SharedDimensionAnswer.query.filter_by(
+        dimension_id=dimension_id
+    ).all()
+    
+    answers_map = {}
+    for sa in shared_answers:
+        qid = sa.question_id
+        if qid not in answers_map:
+            answers_map[qid] = {"numeric": None, "single": None, "multi": []}
+        
+        if sa.numeric_value is not None:
+            answers_map[qid]["numeric"] = sa.numeric_value
+        if sa.scale_option_id is not None:
+            answers_map[qid]["multi"].append(sa.scale_option_id)
+            answers_map[qid]["single"] = sa.scale_option_id
+    
+    return answers_map
+
+
+def save_shared_dimension_answers(dimension_id, answers_data):
+    """
+    Speichert Antworten einer Dimension als gemeinsame Antworten.
+    answers_data ist ein dict: {question_id: {'numeric': ..., 'single': ..., 'multi': [...]}}
+    """
+    # Lösche alte gemeinsame Antworten für diese Dimension
+    SharedDimensionAnswer.query.filter_by(dimension_id=dimension_id).delete()
+    
+    # Speichere neue gemeinsame Antworten
+    for question_id, answer_info in answers_data.items():
+        numeric_val = answer_info.get('numeric')
+        single_val = answer_info.get('single')
+        multi_vals = answer_info.get('multi', [])
+        
+        if numeric_val is not None:
+            # Numerische Antwort
+            shared_answer = SharedDimensionAnswer(
+                dimension_id=dimension_id,
+                question_id=question_id,
+                numeric_value=numeric_val
+            )
+            db.session.add(shared_answer)
+        elif single_val is not None:
+            # Single-Choice Antwort
+            shared_answer = SharedDimensionAnswer(
+                dimension_id=dimension_id,
+                question_id=question_id,
+                scale_option_id=single_val
+            )
+            db.session.add(shared_answer)
+        elif multi_vals:
+            # Multiple-Choice: Speichere als einzelne Option (vereinfacht)
+            for opt_id in multi_vals:
+                shared_answer = SharedDimensionAnswer(
+                    dimension_id=dimension_id,
+                    question_id=question_id,
+                    scale_option_id=opt_id
+                )
+                db.session.add(shared_answer)
+
+
+def serialize_question(question: Question, answers_map: dict, hints_map: dict):
+    # Options (falls scale_id vorhanden)
+    options = []
+    if question.scale_id:
+        opts = (
+            ScaleOption.query
+            .filter_by(scale_id=question.scale_id)
+            .order_by(ScaleOption.sort_order.asc())
+            .all()
+        )
+        options = [{
+            "id": o.id,
+            "code": o.code,
+            "label": o.label,
+            "is_na": bool(o.is_na),
+        } for o in opts]
+
+    # Answer aus answers_map
+    ans = answers_map.get(question.id, {"numeric": None, "single": None, "multi": []})
+
+    if question.question_type == "number":
+        answer_value = ans["numeric"]
+    elif question.question_type == "multiple_choice":
+        answer_value = ans["multi"]  # Liste
+    else:
+        answer_value = ans["single"]  # single_choice
+
+    # Conditions (neu)
+    conds = (
+        QuestionCondition.query
+        .filter_by(question_id=question.id)
+        .order_by(QuestionCondition.sort_order.asc())
+        .all()
+    )
+    conditions = [{"question_id": c.depends_on_question_id, "option_id": c.depends_on_option_id} for c in conds]
+
+    # Legacy fallback (wenn keine QuestionCondition vorhanden)
+    legacy_dep_q = question.depends_on_question_id
+    legacy_dep_opt = question.depends_on_option_id
+    if not conditions and legacy_dep_q and legacy_dep_opt:
+        conditions = [{"question_id": legacy_dep_q, "option_id": legacy_dep_opt}]
+
+    question_dict = {
+        "id": question.id,
+        "code": question.code,
+        "text": question.text,
+        # Template nutzt question.type -> wir liefern 'type'
+        "type": question.question_type,
+        "unit": question.unit,
+        "sort_order": question.sort_order,
+
+        "options": options,
+        "answer": answer_value,
+
+        # Hints: Template erwartet question.hints als dict[option_id] -> list
+        "hints": hints_map.get(question.id, {}),
+
+        # Multi-Condition Felder (neu)
+        "depends_logic": getattr(question, "depends_logic", "all"),
+        "conditions": conditions,
+
+        # Legacy Felder (damit altes Template/JS nicht bricht)
+        "depends_on": legacy_dep_q,
+        "depends_on_option": legacy_dep_opt,
+    }
+
+    return question_dict
+
+
+# ============================================
+# Hilfsfunktion: Filterlogik anwenden (KORRIGIERT)
 # ============================================
 def apply_filter_logic(assessment_id):
     """
-    Phase 3: Filterlogik für Dimension 1 anwenden
+    KORRIGIERTE VERSION:
+    Wendet die Filterlogik an und setzt is_applicable für alle Antworten basierend auf Bedingungen.
     
-    Prüft Frage 1.5 (Plattform vorhanden?):
-    - Ja → alle Folgefragen anwendbar
-    - Nein → Folgefragen nicht anwendbar, Ausschluss-Hint anzeigen
+    Die Funktion:
+    1. Lädt alle Fragen und Antworten für das Assessment
+    2. Baut eine Map der beantworteten Optionen auf
+    3. Evaluiert für jede Frage, ob sie anwendbar ist (basierend auf Bedingungen)
+    4. Setzt das is_applicable Flag entsprechend
+    5. Iteriert mehrfach, um Kaskaden-Abhängigkeiten zu behandeln
     """
+    print(f"\n{'='*60}")
+    print(f"🔍 FILTERLOGIK für Assessment {assessment_id}")
+    print(f"{'='*60}")
     
-    # Hole Frage 1.5 (Plattformverfügbarkeit)
-    q15 = Question.query.filter_by(code="1.5").first()
-    if not q15:
-        return  # Frage nicht gefunden
-    
-    # Hole Antwort auf Frage 1.5
-    answer_15 = Answer.query.filter_by(
-        assessment_id=assessment_id,
-        question_id=q15.id
-    ).first()
-    
-    if not answer_15 or not answer_15.scale_option_id:
-        return  # Keine Antwort
-    
-    # Hole Option
-    option = db.session.get(ScaleOption, answer_15.scale_option_id)
-    
-    # Hole alle abhängigen Fragen
-    dependent_questions = Question.query.filter_by(
-        depends_on_question_id=q15.id
-    ).all()
-    
-    if option.code == "NEIN":
-        # NEIN gewählt → Folgefragen NICHT anwendbar
-        print(f"   🔒 Filterlogik: Frage 1.5 = NEIN → {len(dependent_questions)} Folgefragen nicht anwendbar")
+    assessment = Assessment.query.get(assessment_id)
+    if not assessment:
+        print(f"❌ Assessment {assessment_id} nicht gefunden!")
+        return
+
+    # Alle Fragen für diese Questionnaire Version
+    all_questions = Question.query.filter_by(
+        questionnaire_version_id=assessment.questionnaire_version_id
+    ).order_by(Question.dimension_id, Question.sort_order).all()
+
+    print(f"📊 Anzahl Fragen: {len(all_questions)}")
+
+    def get_conditions(q):
+        """Liefert alle Bedingungen für eine Frage (neu + legacy)"""
+        if q.conditions:
+            return [(c.depends_on_question_id, c.depends_on_option_id) for c in q.conditions]
+        if q.depends_on_question_id and q.depends_on_option_id:
+            return [(q.depends_on_question_id, q.depends_on_option_id)]
+        return []
+
+    def build_answer_map():
+        """
+        Baut eine Map: question_id -> set(selected_option_ids)
+        Nur für is_applicable=True Antworten
+        """
+        answers = Answer.query.filter_by(
+            assessment_id=assessment_id,
+            is_applicable=True
+        ).all()
         
-        for dep_q in dependent_questions:
-            # Aktualisiere oder erstelle Answer mit is_applicable=False
-            dep_answer = Answer.query.filter_by(
-                assessment_id=assessment_id,
-                question_id=dep_q.id
-            ).first()
+        answer_map = {}
+        for ans in answers:
+            qid = ans.question_id
+            if qid not in answer_map:
+                answer_map[qid] = set()
             
-            if dep_answer:
-                dep_answer.is_applicable = False
-                dep_answer.scale_option_id = None
-                dep_answer.numeric_value = None
-            else:
-                # Erstelle neuen Answer-Eintrag
-                dep_answer = Answer(
-                    assessment_id=assessment_id,
-                    question_id=dep_q.id,
-                    is_applicable=False,
-                    scale_option_id=None,
-                    numeric_value=None
-                )
-                db.session.add(dep_answer)
-    
-    else:
-        # JA gewählt → Folgefragen SIND anwendbar
-        print(f"   ✅ Filterlogik: Frage 1.5 = JA → {len(dependent_questions)} Folgefragen anwendbar")
+            if ans.scale_option_id is not None:
+                answer_map[qid].add(ans.scale_option_id)
         
-        for dep_q in dependent_questions:
-            dep_answer = Answer.query.filter_by(
-                assessment_id=assessment_id,
-                question_id=dep_q.id
-            ).first()
+        return answer_map
+
+    def evaluate_applicable(q, answer_map):
+        """
+        Prüft, ob eine Frage anwendbar ist basierend auf ihren Bedingungen
+        """
+        conds = get_conditions(q)
+        
+        # Keine Bedingungen = immer anwendbar
+        if not conds:
+            return True
+        
+        # Logik: "all" oder "any"
+        logic = getattr(q, 'depends_logic', 'all').lower()
+        
+        # Prüfe jede Bedingung
+        results = []
+        for parent_q_id, required_opt_id in conds:
+            # Wurde die erforderliche Option für die parent-Frage gewählt?
+            is_met = required_opt_id in answer_map.get(parent_q_id, set())
+            results.append(is_met)
+        
+        # Wende Logik an
+        if logic == "any":
+            return any(results)  # Mindestens eine Bedingung erfüllt
+        else:  # "all"
+            return all(results)  # Alle Bedingungen erfüllt
+
+    # Iterative Anwendung (für Kaskaden-Abhängigkeiten)
+    max_iterations = 10
+    iteration = 0
+    changes_made = True
+
+    while changes_made and iteration < max_iterations:
+        iteration += 1
+        changes_made = False
+        
+        print(f"\n🔄 Iteration {iteration}")
+        
+        # Aktuelle Antwort-Map bauen
+        answer_map = build_answer_map()
+        
+        # Für jede Frage prüfen
+        for question in all_questions:
+            # Ist die Frage anwendbar?
+            should_be_applicable = evaluate_applicable(question, answer_map)
             
-            if dep_answer:
-                dep_answer.is_applicable = True
+            # Hole alle Antworten für diese Frage
+            answers = Answer.query.filter_by(
+                assessment_id=assessment_id,
+                question_id=question.id
+            ).all()
+            
+            # Update is_applicable wenn nötig
+            for answer in answers:
+                if answer.is_applicable != should_be_applicable:
+                    print(f"  📝 Frage {question.code}: is_applicable {answer.is_applicable} -> {should_be_applicable}")
+                    answer.is_applicable = should_be_applicable
+                    changes_made = True
+                    
+                    # Wenn Frage nicht mehr anwendbar, lösche die Antwort-Werte
+                    if not should_be_applicable:
+                        answer.scale_option_id = None
+                        answer.numeric_value = None
+        
+        if not changes_made:
+            print(f"  ✅ Keine Änderungen in Iteration {iteration} - Filterlogik stabil")
+
+    if iteration >= max_iterations:
+        print(f"  ⚠️  Maximale Iterationen erreicht!")
+    
+    print(f"{'='*60}\n")
 
 
 # ============================================
@@ -171,89 +438,47 @@ def get_dimension_status(dimension_id, assessment_id=None):
 
 
 # ============================================
-# Route: Startseite / Fragebogen
+# Route: Startseite (Fragebogen)
 # ============================================
 @app.route('/')
 def index():
-    """Zeigt den Fragebogen mit Fragen aus der Datenbank"""
+    """Zeigt den Fragebogen an"""
     
     qv = QuestionnaireVersion.query.filter_by(is_active=True).first()
-    
     if not qv:
-        return "Keine aktive Fragebogen-Version gefunden.", 500
+        return "Keine aktive Fragebogen-Version gefunden", 500
     
     dimensions = Dimension.query.filter_by(
         questionnaire_version_id=qv.id
     ).order_by(Dimension.sort_order).all()
     
-    dimensions_data = []
+    hints_map = build_hints_map(qv.id)
+    shared_dim_ids = get_shared_dimension_ids()
     
-    for dimension in dimensions:
+    # Für jede Dimension: Fragen laden
+    for dim in dimensions:
         questions = Question.query.filter_by(
-            dimension_id=dimension.id
+            dimension_id=dim.id
         ).order_by(Question.sort_order).all()
         
-        questions_data = []
-        for question in questions:
-            question_dict = {
-                'id': question.id,
-                'code': question.code,
-                'text': question.text,
-                'type': question.question_type,
-                'unit': question.unit,
-                'options': [],
-                'depends_on': question.depends_on_question_id,  # Phase 3
-                'depends_on_option': question.depends_on_option_id,  # Phase 3
-                'filter_description': question.filter_description  # Phase 3
-            }
-            
-            if question.question_type in ('single_choice', 'multiple_choice') and question.scale:
-                options = ScaleOption.query.filter_by(
-                    scale_id=question.scale_id
-                ).order_by(ScaleOption.sort_order).all()
-                
-                question_dict['options'] = [
-                    {
-                        'id': opt.id,
-                        'code': opt.code,
-                        'label': opt.label,
-                        'is_na': opt.is_na
-                    }
-                    for opt in options
-                ]
-                
-                # Phase 3: Hints für Optionen laden
-                question_dict['hints'] = {}
-                for opt in options:
-                    hints = Hint.query.filter_by(
-                        question_id=question.id,
-                        scale_option_id=opt.id
-                    ).all()
-                    
-                    if hints:
-                        question_dict['hints'][opt.id] = [
-                            {
-                                'text': h.hint_text,
-                                'type': h.hint_type,
-                                'automation_type': h.automation_type
-                            }
-                            for h in hints
-                        ]
-            
-            questions_data.append(question_dict)
+        # Lade gemeinsame Antworten für Dimensionen 1 & 2
+        if dim.id in shared_dim_ids:
+            answers_map = load_shared_dimension_answers(dim.id)
+        else:
+            answers_map = {}
         
-        dimensions_data.append({
-            'id': dimension.id,
-            'code': dimension.code,
-            'name': dimension.name,
-            'calc_method': dimension.calc_method,  # Phase 4
-            'questions': questions_data,
-            'status': 'not_started'  # Phase 2: Wird im Template aktualisiert
-        })
+        # Serialize Fragen in separates Attribut (nicht die SQLAlchemy relationship ändern)
+        dim.serialized_questions = [serialize_question(q, answers_map, hints_map) for q in questions]
+        
+        # Markiere Dimension als "gemeinsam nutzbar"
+        dim.is_shared = dim.id in shared_dim_ids
     
-    return render_template('index.html', 
-                         questionnaire=qv,
-                         dimensions=dimensions_data)
+    return render_template(
+        'index.html',
+        questionnaire=qv,
+        dimensions=dimensions,
+        edit_mode=False
+    )
 
 
 # ============================================
@@ -261,7 +486,7 @@ def index():
 # ============================================
 @app.route('/assessment/<int:assessment_id>/edit')
 def edit_assessment(assessment_id):
-    """Zeigt den Fragebogen mit vorausgefüllten Antworten"""
+    """Zeigt Fragebogen zum Bearbeiten eines Assessments"""
     
     assessment = Assessment.query.get_or_404(assessment_id)
     process = db.session.get(Process, assessment.process_id)
@@ -271,119 +496,36 @@ def edit_assessment(assessment_id):
         questionnaire_version_id=qv.id
     ).order_by(Dimension.sort_order).all()
     
-    # Hole alle Antworten
-    existing_answers = Answer.query.filter_by(
-        assessment_id=assessment_id
-    ).all()
+    # Answers laden
+    answers_map = build_answers_map(assessment_id)
+    hints_map = build_hints_map(qv.id)
+    shared_dim_ids = get_shared_dimension_ids()
     
-    answers_by_question = {}
-    for answer in existing_answers:
-        if answer.question_id not in answers_by_question:
-            answers_by_question[answer.question_id] = []
-        answers_by_question[answer.question_id].append(answer)
-    
-    dimensions_data = []
-    
-    for dimension in dimensions:
+    # Für jede Dimension: Fragen laden
+    for dim in dimensions:
         questions = Question.query.filter_by(
-            dimension_id=dimension.id
+            dimension_id=dim.id
         ).order_by(Question.sort_order).all()
         
-        questions_data = []
-        for question in questions:
-            question_dict = {
-                'id': question.id,
-                'code': question.code,
-                'text': question.text,
-                'type': question.question_type,
-                'unit': question.unit,
-                'options': [],
-                'answer': None,
-                'is_applicable': True,  # Phase 3
-                'depends_on': question.depends_on_question_id,
-                'depends_on_option': question.depends_on_option_id,
-                'filter_description': question.filter_description
-            }
-            
-            question_answers = answers_by_question.get(question.id, [])
-            
-            # Phase 3: is_applicable Status
-            if question_answers:
-                question_dict['is_applicable'] = question_answers[0].is_applicable
-            
-            # Vorausfüllung
-            if question.question_type == 'number':
-                if question_answers and question_answers[0].numeric_value is not None:
-                    question_dict['answer'] = question_answers[0].numeric_value
-            
-            elif question.question_type == 'single_choice':
-                if question_answers and question_answers[0].scale_option_id is not None:
-                    question_dict['answer'] = question_answers[0].scale_option_id
-            
-            elif question.question_type == 'multiple_choice':
-                selected_ids = [a.scale_option_id for a in question_answers if a.scale_option_id is not None]
-                question_dict['answer'] = selected_ids
-            
-            if question.question_type in ('single_choice', 'multiple_choice') and question.scale:
-                options = ScaleOption.query.filter_by(
-                    scale_id=question.scale_id
-                ).order_by(ScaleOption.sort_order).all()
-                
-                question_dict['options'] = [
-                    {
-                        'id': opt.id,
-                        'code': opt.code,
-                        'label': opt.label,
-                        'is_na': opt.is_na
-                    }
-                    for opt in options
-                ]
-                
-                # Hints
-                question_dict['hints'] = {}
-                for opt in options:
-                    hints = Hint.query.filter_by(
-                        question_id=question.id,
-                        scale_option_id=opt.id
-                    ).all()
-                    
-                    if hints:
-                        question_dict['hints'][opt.id] = [
-                            {
-                                'text': h.hint_text,
-                                'type': h.hint_type,
-                                'automation_type': h.automation_type
-                            }
-                            for h in hints
-                        ]
-            
-            questions_data.append(question_dict)
+        dim.serialized_questions = [serialize_question(q, answers_map, hints_map) for q in questions]
         
-        # Phase 2: Status berechnen
-        status = get_dimension_status(dimension.id, assessment_id)
-        
-        dimensions_data.append({
-            'id': dimension.id,
-            'code': dimension.code,
-            'name': dimension.name,
-            'calc_method': dimension.calc_method,
-            'questions': questions_data,
-            'status': status  # Phase 2
-        })
+        # Markiere Dimension als "gemeinsam nutzbar"
+        dim.is_shared = dim.id in shared_dim_ids
     
     process_data = {
-        'name': process.name,
-        'description': process.description,
-        'industry': process.industry or ''
+        "name": process.name,
+        "description": process.description,
+        "industry": process.industry
     }
     
-    return render_template('index.html', 
-                         questionnaire=qv,
-                         dimensions=dimensions_data,
-                         edit_mode=True,
-                         assessment_id=assessment_id,
-                         process_data=process_data)
-
+    return render_template(
+        'index.html',
+        questionnaire=qv,
+        dimensions=dimensions,
+        edit_mode=True,
+        process_data=process_data,
+        assessment_id=assessment.id
+    )
 
 # ============================================
 # Route: Assessment aktualisieren
@@ -476,6 +618,43 @@ def update_assessment(assessment_id):
                 db.session.add(answer)
         
         db.session.commit()
+        
+        # 3.5. Speichere gemeinsame Antworten für Dimensionen 1 & 2 wenn aktiviert
+        use_shared_dims = request.form.get('use_shared_dimensions') == 'on'
+        if use_shared_dims:
+            print("\n💾 Speichere gemeinsame Dimensionen-Antworten...")
+            shared_dim_ids = get_shared_dimension_ids()
+            
+            for dim_id in shared_dim_ids:
+                # Sammle alle Antworten für diese Dimension
+                dim_questions = Question.query.filter_by(dimension_id=dim_id).all()
+                dim_answers = {}
+                
+                for q in dim_questions:
+                    field_single = f"q_{q.id}"
+                    field_multi = f"q_{q.id}[]"
+                    
+                    if q.question_type == "number":
+                        value = request.form.get(field_single)
+                        if value and value.strip():
+                            try:
+                                dim_answers[q.id] = {'numeric': float(value), 'single': None, 'multi': []}
+                            except ValueError:
+                                pass
+                    elif q.question_type == "single_choice":
+                        value = request.form.get(field_single)
+                        if value:
+                            dim_answers[q.id] = {'numeric': None, 'single': int(value), 'multi': []}
+                    elif q.question_type == "multiple_choice":
+                        values = request.form.getlist(field_multi)
+                        if values:
+                            dim_answers[q.id] = {'numeric': None, 'single': None, 'multi': [int(v) for v in values]}
+                
+                if dim_answers:
+                    save_shared_dimension_answers(dim_id, dim_answers)
+                    print(f"   ✅ Dimension {dim_id}: {len(dim_answers)} Antworten gespeichert")
+            
+            db.session.commit()
         
         # 4. Phase 3: Filterlogik anwenden
         apply_filter_logic(assessment_id)
@@ -625,6 +804,43 @@ def evaluate():
         print(f"   ✅ Beantwortet: {answered_count}")
         print(f"   ⚠️  Unbeantworten: {unanswered_count}")
         
+        # 4.5. Speichere gemeinsame Antworten für Dimensionen 1 & 2 wenn aktiviert
+        use_shared_dims = request.form.get('use_shared_dimensions') == 'on'
+        if use_shared_dims:
+            print("\n💾 Speichere gemeinsame Dimensionen-Antworten...")
+            shared_dim_ids = get_shared_dimension_ids()
+            
+            for dim_id in shared_dim_ids:
+                # Sammle alle Antworten für diese Dimension
+                dim_questions = Question.query.filter_by(dimension_id=dim_id).all()
+                dim_answers = {}
+                
+                for q in dim_questions:
+                    field_single = f"q_{q.id}"
+                    field_multi = f"q_{q.id}[]"
+                    
+                    if q.question_type == "number":
+                        value = request.form.get(field_single)
+                        if value and value.strip():
+                            try:
+                                dim_answers[q.id] = {'numeric': float(value), 'single': None, 'multi': []}
+                            except ValueError:
+                                pass
+                    elif q.question_type == "single_choice":
+                        value = request.form.get(field_single)
+                        if value:
+                            dim_answers[q.id] = {'numeric': None, 'single': int(value), 'multi': []}
+                    elif q.question_type == "multiple_choice":
+                        values = request.form.getlist(field_multi)
+                        if values:
+                            dim_answers[q.id] = {'numeric': None, 'single': None, 'multi': [int(v) for v in values]}
+                
+                if dim_answers:
+                    save_shared_dimension_answers(dim_id, dim_answers)
+                    print(f"   ✅ Dimension {dim_id}: {len(dim_answers)} Antworten gespeichert")
+            
+            db.session.commit()
+        
         # 5. Phase 3: Filterlogik anwenden
         apply_filter_logic(assessment.id)
         db.session.commit()
@@ -682,53 +898,69 @@ def comparison():
             'total_ipa': total_result.total_ipa,
             'rpa_excluded': total_result.rpa_excluded,
             'ipa_excluded': total_result.ipa_excluded,
-            'recommendation': total_result.recommendation,
             'combined_score': combined_score
         })
-    
-    assessments_data.sort(key=lambda x: x['combined_score'], reverse=True)
     
     return render_template('comparison.html', assessments=assessments_data)
 
 
 # ============================================
-# Route: Einzelnes Assessment anzeigen
+# Route: Assessment anzeigen
 # ============================================
 @app.route('/assessment/<int:assessment_id>')
 def view_assessment(assessment_id):
-    """Zeigt ein spezifisches Assessment mit Details - Phase 2, 3, 4"""
-
+    """Zeigt Ergebnisse eines Assessments"""
+    
     assessment = Assessment.query.get_or_404(assessment_id)
     process = db.session.get(Process, assessment.process_id)
+    
+    # Gesamtergebnis
     total_result = TotalResult.query.filter_by(assessment_id=assessment_id).first()
-
-    if not total_result:
-        return "Assessment wurde noch nicht ausgewertet", 404
-
-    qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
-    dimensions = Dimension.query.filter_by(
-        questionnaire_version_id=qv.id
-    ).order_by(Dimension.sort_order).all()
-
-    breakdown = []
-
-    for dimension in dimensions:
-        dim_result_rpa = DimensionResult.query.filter_by(
-            assessment_id=assessment_id,
-            dimension_id=dimension.id,
-            automation_type="RPA"
-        ).first()
-
-        dim_result_ipa = DimensionResult.query.filter_by(
-            assessment_id=assessment_id,
-            dimension_id=dimension.id,
-            automation_type="IPA"
-        ).first()
-
-        questions = Question.query.filter_by(dimension_id=dimension.id).order_by(Question.sort_order).all()
-        answers_detail = []
-
+    
+    # Dimensionsergebnisse
+    dim_results = db.session.query(
+        DimensionResult, Dimension
+    ).join(
+        Dimension, DimensionResult.dimension_id == Dimension.id
+    ).filter(
+        DimensionResult.assessment_id == assessment_id
+    ).order_by(
+        Dimension.sort_order, DimensionResult.automation_type
+    ).all()
+    
+    # Gruppiere Ergebnisse nach Dimension (pro Dimension gibt es RPA und IPA)
+    dimensions_by_id = {}
+    for dim_result, dimension in dim_results:
+        if dimension.id not in dimensions_by_id:
+            dimensions_by_id[dimension.id] = {
+                'code': dimension.code,
+                'name': dimension.name,
+                'calc_method': dimension.calc_method,
+                'is_shared': dimension.code in ['1', '2'],  # Dimensionen 1 & 2 sind gemeinsam
+                'rpa_score': None,
+                'ipa_score': None,
+                'rpa_excluded': False,
+                'ipa_excluded': False,
+                'answers': []  # Wird später gefüllt
+            }
+        
+        # Speichere Score basierend auf automation_type
+        if dim_result.automation_type == "RPA":
+            dimensions_by_id[dimension.id]['rpa_score'] = dim_result.mean_score
+            dimensions_by_id[dimension.id]['rpa_excluded'] = dim_result.is_excluded
+        elif dim_result.automation_type == "IPA":
+            dimensions_by_id[dimension.id]['ipa_score'] = dim_result.mean_score
+            dimensions_by_id[dimension.id]['ipa_excluded'] = dim_result.is_excluded
+    
+    # Lade Antworten für jede Dimension
+    from models.database import Question, Answer, ScaleOption, OptionScore
+    
+    for dimension_id, dim_data in dimensions_by_id.items():
+        # Hole alle Fragen für diese Dimension
+        questions = Question.query.filter_by(dimension_id=dimension_id).order_by(Question.sort_order).all()
+        
         for question in questions:
+            # Hole ALLE Antworten für diese Frage (wichtig für Multiple Choice)
             answers = Answer.query.filter_by(
                 assessment_id=assessment_id,
                 question_id=question.id
@@ -737,221 +969,274 @@ def view_assessment(assessment_id):
             if not answers:
                 continue
             
-            # Phase 3: Nicht anwendbare Fragen anders behandeln
-            if answers[0].is_applicable is False:
-                # Zeige als "Nicht anwendbar"
-                answers_detail.append({
-                    "question_code": question.code,
-                    "question_text": question.text,
-                    "answer": "Nicht anwendbar",
-                    "rpa_score": "–",
-                    "ipa_score": "–",
-                    "is_applicable": False
-                })
-                continue
+            # Formatiere Antwort(en)
+            answer_text = "Keine Antwort"
+            all_option_ids = []
             
-            answer_text = ""
-            rpa_score = None
-            ipa_score = None
-
             if question.question_type == "number":
-                a = answers[0]
-                if a.numeric_value is None:
-                    continue
-                
-                answer_text = f"{a.numeric_value} {question.unit or ''}".strip()
-                rpa_score = "–"
-                ipa_score = "–"
-
-            elif question.question_type == "single_choice":
-                a = answers[0]
-                if not a.scale_option_id:
-                    continue
-
-                option = db.session.get(ScaleOption, a.scale_option_id)
-                answer_text = option.label if option else ""
-
-                score_rpa = OptionScore.query.filter_by(
-                    question_id=question.id,
-                    scale_option_id=a.scale_option_id,
-                    automation_type="RPA"
-                ).first()
-
-                score_ipa = OptionScore.query.filter_by(
-                    question_id=question.id,
-                    scale_option_id=a.scale_option_id,
-                    automation_type="IPA"
-                ).first()
-
-                def fmt(os):
-                    if not os:
-                        return None
-                    if os.is_exclusion:
-                        return "AUSSCHLUSS"
-                    if not os.is_applicable:
-                        return "N/A"
-                    return os.score
-
-                rpa_score = fmt(score_rpa)
-                ipa_score = fmt(score_ipa)
-
+                # Numerische Frage - nur eine Antwort
+                if answers[0].numeric_value is not None:
+                    answer_text = f"{answers[0].numeric_value}"
+                    if question.unit:
+                        answer_text += f" {question.unit}"
+                        
             elif question.question_type == "multiple_choice":
-                option_ids = [a.scale_option_id for a in answers if a.scale_option_id]
-                if not option_ids:
-                    continue
-
-                options = [db.session.get(ScaleOption, oid) for oid in option_ids]
-                labels = [o.label for o in options if o]
-                answer_text = ", ".join(labels)
-
-                scores_rpa = OptionScore.query.filter(
-                    OptionScore.question_id == question.id,
-                    OptionScore.automation_type == "RPA",
-                    OptionScore.scale_option_id.in_(option_ids)
-                ).all()
-
-                scores_ipa = OptionScore.query.filter(
-                    OptionScore.question_id == question.id,
-                    OptionScore.automation_type == "IPA",
-                    OptionScore.scale_option_id.in_(option_ids)
-                ).all()
-
-                def best_of(option_scores):
-                    if not option_scores:
-                        return None
-                    if any(os.is_exclusion for os in option_scores):
-                        return "AUSSCHLUSS"
-                    applicable = [os.score for os in option_scores if os.is_applicable and os.score is not None]
-                    if not applicable:
-                        return "N/A"
-                    return max(applicable)
-
-                rpa_score = best_of(scores_rpa)
-                ipa_score = best_of(scores_ipa)
-
+                # Multiple Choice - mehrere Antworten möglich
+                selected_options = []
+                for ans in answers:
+                    if ans.scale_option_id:
+                        option = ScaleOption.query.get(ans.scale_option_id)
+                        if option:
+                            selected_options.append(option.label)
+                            all_option_ids.append(ans.scale_option_id)
+                
+                if selected_options:
+                    answer_text = ", ".join(selected_options)
+                    
             else:
-                continue
-
-            answers_detail.append({
-                "question_code": question.code,
-                "question_text": question.text,
-                "answer": answer_text,
-                "rpa_score": rpa_score,
-                "ipa_score": ipa_score,
-                "is_applicable": True
+                # Single Choice - nur eine Antwort
+                if answers[0].scale_option_id:
+                    option = ScaleOption.query.get(answers[0].scale_option_id)
+                    if option:
+                        answer_text = option.label
+                        all_option_ids.append(answers[0].scale_option_id)
+            
+            # Hole Scores für diese Antwort(en)
+            rpa_score_text = "–"
+            ipa_score_text = "–"
+            
+            if all_option_ids:
+                # Für Multiple Choice: Zeige den höchsten Score an
+                if question.question_type == "multiple_choice":
+                    # Hole alle OptionScores für die gewählten Optionen
+                    rpa_scores_objs = OptionScore.query.filter(
+                        OptionScore.question_id == question.id,
+                        OptionScore.scale_option_id.in_(all_option_ids),
+                        OptionScore.automation_type == "RPA"
+                    ).all()
+                    
+                    ipa_scores_objs = OptionScore.query.filter(
+                        OptionScore.question_id == question.id,
+                        OptionScore.scale_option_id.in_(all_option_ids),
+                        OptionScore.automation_type == "IPA"
+                    ).all()
+                    
+                    # RPA: Prüfe auf Ausschluss, dann höchster Score
+                    if any(s.is_exclusion for s in rpa_scores_objs):
+                        rpa_score_text = "AUSSCHLUSS"
+                    else:
+                        applicable_rpa = [s.score for s in rpa_scores_objs if s.is_applicable and s.score is not None]
+                        if applicable_rpa:
+                            rpa_score_text = f"{max(applicable_rpa):.1f} (max)"
+                    
+                    # IPA: Prüfe auf Ausschluss, dann höchster Score
+                    if any(s.is_exclusion for s in ipa_scores_objs):
+                        ipa_score_text = "AUSSCHLUSS"
+                    else:
+                        applicable_ipa = [s.score for s in ipa_scores_objs if s.is_applicable and s.score is not None]
+                        if applicable_ipa:
+                            ipa_score_text = f"{max(applicable_ipa):.1f} (max)"
+                
+                else:
+                    # Single Choice - wie bisher
+                    option_id = all_option_ids[0]
+                    
+                    # RPA Score
+                    rpa_score_obj = OptionScore.query.filter_by(
+                        question_id=question.id,
+                        scale_option_id=option_id,
+                        automation_type="RPA"
+                    ).first()
+                    
+                    if rpa_score_obj:
+                        if rpa_score_obj.is_exclusion:
+                            rpa_score_text = "AUSSCHLUSS"
+                        elif not rpa_score_obj.is_applicable:
+                            rpa_score_text = "N/A"
+                        elif rpa_score_obj.score is not None:
+                            rpa_score_text = f"{rpa_score_obj.score:.1f}"
+                    
+                    # IPA Score
+                    ipa_score_obj = OptionScore.query.filter_by(
+                        question_id=question.id,
+                        scale_option_id=option_id,
+                        automation_type="IPA"
+                    ).first()
+                    
+                    if ipa_score_obj:
+                        if ipa_score_obj.is_exclusion:
+                            ipa_score_text = "AUSSCHLUSS"
+                        elif not ipa_score_obj.is_applicable:
+                            ipa_score_text = "N/A"
+                        elif ipa_score_obj.score is not None:
+                            ipa_score_text = f"{ipa_score_obj.score:.1f}"
+            
+            dim_data['answers'].append({
+                'question_code': question.code,
+                'question_text': question.text,
+                'answer': answer_text,
+                'is_applicable': answers[0].is_applicable,
+                'rpa_score': rpa_score_text,
+                'ipa_score': ipa_score_text
             })
-
-        # Phase 2: Dimension Status
-        status = get_dimension_status(dimension.id, assessment_id)
-        
-        # Phase 4: Shared Dimensions (Dimension 1 und 7)
-        is_shared = dimension.calc_method in ('filter', 'economic_score')
-
-        breakdown.append({
-            "name": dimension.name,
-            "code": dimension.code,
-            "calc_method": dimension.calc_method,  # Phase 4
-            "is_shared": is_shared,  # Phase 4
-            "status": status,  # Phase 2
-            "score_rpa": dim_result_rpa.mean_score if dim_result_rpa and not dim_result_rpa.is_excluded else None,
-            "score_ipa": dim_result_ipa.mean_score if dim_result_ipa and not dim_result_ipa.is_excluded else None,
-            "excluded_rpa": dim_result_rpa.is_excluded if dim_result_rpa else False,
-            "excluded_ipa": dim_result_ipa.is_excluded if dim_result_ipa else False,
-            "answers": answers_detail
-        })
-
-    result_data = {
-        "recommendation": total_result.recommendation,
-        "total_rpa": total_result.total_rpa,
-        "total_ipa": total_result.total_ipa,
-        "rpa_excluded": total_result.rpa_excluded,
-        "ipa_excluded": total_result.ipa_excluded,
-        "max_score": 5.0,
-        "threshold": 0.25,
-        "use_case": {
-            "id": process.id,
-            "name": process.name,
-            "industry": process.industry
-        },
-        "run_id": f"ASS-{assessment.id}",
-        "breakdown": breakdown,
-        "assessment_id": assessment_id
-    }
-
-    return render_template("result.html", **result_data)
+    
+    # Formatiere Dimensionsergebnisse (sortiert nach Sort-Order)
+    dimensions_data = []
+    for dim_result, dimension in dim_results:
+        if dimension.id in dimensions_by_id:
+            data = dimensions_by_id.pop(dimension.id)
+            dimensions_data.append(data)
+    
+    # Berechne max_score basierend auf Anzahl der Dimensionen
+    # Jede Dimension hat einen Score von 0-5, also max_score = Anzahl Dimensionen * 5
+    num_dimensions = len(dimensions_data)
+    max_score = num_dimensions * 5.0
+    
+    # Extrahiere Gesamtscores für einfacheren Template-Zugriff
+    total_rpa = total_result.total_rpa if total_result else None
+    total_ipa = total_result.total_ipa if total_result else None
+    rpa_excluded = total_result.rpa_excluded if total_result else False
+    ipa_excluded = total_result.ipa_excluded if total_result else False
+    
+    # Lade Economic Metrics
+    economic_metrics_data = {}
+    econ_metrics = EconomicMetric.query.filter_by(assessment_id=assessment_id).all()
+    for metric in econ_metrics:
+        economic_metrics_data[metric.key] = {
+            'value': metric.value,
+            'unit': metric.unit
+        }
+    
+    return render_template(
+        'result.html',
+        use_case=process,
+        assessment=assessment,
+        assessment_id=assessment_id,  # WICHTIG: assessment_id für Edit-Button
+        total_result=total_result,
+        total_rpa=total_rpa,  # Für Template-Zugriff
+        total_ipa=total_ipa,  # Für Template-Zugriff
+        rpa_excluded=rpa_excluded,  # Für Template-Zugriff
+        ipa_excluded=ipa_excluded,  # Für Template-Zugriff
+        max_score=max_score,  # Für Balkendiagramme
+        dimensions=dimensions_data,
+        breakdown=dimensions_data,  # Für Dimensionsdetails-Dropdown
+        economic_metrics=economic_metrics_data if economic_metrics_data else None,  # Wirtschaftlichkeit
+        run_id=assessment_id,
+        recommendation=total_result.recommendation if total_result else None,
+        threshold=0.25  # Schwellenwert für Empfehlung
+    )
 
 
 # ============================================
-# Route: Ergebnis exportieren
+# Route: Assessment löschen
 # ============================================
-@app.route('/export_result', methods=['POST'])
-def export_result():
-    """Exportiert Assessment-Ergebnisse als CSV"""
-    assessment_id = request.form.get('assessment_id')
-    if not assessment_id:
-        return "Assessment ID erforderlich", 400
-
-    # Falls run_id im Format ASS-<id> übergeben wurde
+@app.route('/assessment/<int:assessment_id>/delete', methods=['POST'])
+def delete_assessment(assessment_id):
+    """Löscht ein Assessment"""
+    
     try:
-        assessment_id = int(str(assessment_id).replace('ASS-', ''))
-    except (ValueError, AttributeError):
-        return "Ungültige Assessment ID", 400
+        assessment = Assessment.query.get_or_404(assessment_id)
+        process_id = assessment.process_id
+        
+        # Lösche Assessment (cascade löscht Antworten, Ergebnisse)
+        db.session.delete(assessment)
+        
+        # Lösche Process wenn keine weiteren Assessments
+        remaining = Assessment.query.filter_by(process_id=process_id).count()
+        if remaining == 0:
+            process = db.session.get(Process, process_id)
+            if process:
+                db.session.delete(process)
+        
+        db.session.commit()
+        return redirect(url_for('comparison'))
+    
+    except Exception as e:
+        db.session.rollback()
+        return f"Fehler beim Löschen: {str(e)}", 500
 
+
+# ============================================
+# Route: CSV Export
+# ============================================
+@app.route('/assessment/<int:assessment_id>/export')
+def export_assessment(assessment_id):
+    """Exportiert Assessment als CSV"""
+    
     assessment = Assessment.query.get_or_404(assessment_id)
     process = db.session.get(Process, assessment.process_id)
     total_result = TotalResult.query.filter_by(assessment_id=assessment_id).first()
-
-    if not total_result:
-        return "Assessment wurde nicht gefunden", 404
-
-    # Erstelle CSV
+    
+    dim_results = db.session.query(
+        DimensionResult, Dimension
+    ).join(
+        Dimension, DimensionResult.dimension_id == Dimension.id
+    ).filter(
+        DimensionResult.assessment_id == assessment_id
+    ).order_by(
+        Dimension.sort_order
+    ).all()
+    
+    # CSV erstellen
     output = StringIO()
-    writer = csv.writer(output, delimiter=';')
-
-    # Meta
-    writer.writerow(['AutomationFit Assessment Export'])
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow(['Assessment Export'])
+    writer.writerow(['Prozess', process.name])
+    writer.writerow(['Branche', process.industry or '-'])
+    writer.writerow(['Beschreibung', process.description or '-'])
     writer.writerow([])
-    writer.writerow(['Prozess-Name', process.name or ''])
-    writer.writerow(['Industrie', process.industry or ''])
-    writer.writerow(['Assessment ID', f'ASS-{assessment.id}'])
-    writer.writerow(['Erstellt am', assessment.created_at.strftime('%d.%m.%Y %H:%M') if assessment.created_at else 'N/A'])
+    
+    # Gesamtergebnis
+    writer.writerow(['Gesamtergebnis'])
+    writer.writerow(['Typ', 'Score', 'Status'])
+    writer.writerow(['RPA', total_result.total_rpa or '-', 
+                     'Ausgeschlossen' if total_result.rpa_excluded else 'Bewertet'])
+    writer.writerow(['IPA', total_result.total_ipa or '-',
+                     'Ausgeschlossen' if total_result.ipa_excluded else 'Bewertet'])
     writer.writerow([])
-
-    # Gesamtergebnisse
-    writer.writerow(['Gesamtergebnisse'])
-    writer.writerow(['RPA Score', total_result.total_rpa if total_result.total_rpa is not None else 'N/A'])
-    writer.writerow(['IPA Score', total_result.total_ipa if total_result.total_ipa is not None else 'N/A'])
-    writer.writerow(['Empfehlung', total_result.recommendation or 'N/A'])
-    writer.writerow([])
-
-    # Dimensionen
-    writer.writerow(['Dimensionen'])
-    writer.writerow(['Dimension', 'RPA Score', 'IPA Score', 'RPA Ausgeschlossen', 'IPA Ausgeschlossen'])
-    qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
-    dimensions = Dimension.query.filter_by(questionnaire_version_id=qv.id).order_by(Dimension.sort_order).all()
-
-    for dimension in dimensions:
-        dim_result_rpa = DimensionResult.query.filter_by(assessment_id=assessment_id, dimension_id=dimension.id, automation_type="RPA").first()
-        dim_result_ipa = DimensionResult.query.filter_by(assessment_id=assessment_id, dimension_id=dimension.id, automation_type="IPA").first()
-
-        rpa_score = dim_result_rpa.mean_score if dim_result_rpa and not dim_result_rpa.is_excluded else 'N/A'
-        ipa_score = dim_result_ipa.mean_score if dim_result_ipa and not dim_result_ipa.is_excluded else 'N/A'
-        rpa_excluded = 'Ja' if (dim_result_rpa and dim_result_rpa.is_excluded) else 'Nein'
-        ipa_excluded = 'Ja' if (dim_result_ipa and dim_result_ipa.is_excluded) else 'Nein'
-
-        writer.writerow([dimension.code, rpa_score, ipa_score, rpa_excluded, ipa_excluded])
-
-    csv_data = output.getvalue()
-    output.close()
-
-    resp = Response(csv_data, mimetype='text/csv')
-    resp.headers['Content-Disposition'] = f'attachment; filename=Assessment_ASS-{assessment.id}.csv'
-    return resp
+    
+    # Dimensionsergebnisse
+    writer.writerow(['Dimensionsergebnisse'])
+    writer.writerow(['Code', 'Dimension', 'RPA Score', 'IPA Score'])
+    
+    # Gruppiere Dimensionsergebnisse nach Dimension
+    dims_by_id = {}
+    for dim_result, dimension in dim_results:
+        if dimension.id not in dims_by_id:
+            dims_by_id[dimension.id] = {
+                'code': dimension.code,
+                'name': dimension.name,
+                'rpa': None,
+                'ipa': None
+            }
+        if dim_result.automation_type == 'RPA':
+            dims_by_id[dimension.id]['rpa'] = dim_result.mean_score
+        elif dim_result.automation_type == 'IPA':
+            dims_by_id[dimension.id]['ipa'] = dim_result.mean_score
+    
+    # Schreibe Zeilen
+    for dim_id, dim_data in dims_by_id.items():
+        writer.writerow([
+            dim_data['code'],
+            dim_data['name'],
+            dim_data['rpa'] if dim_data['rpa'] is not None else '-',
+            dim_data['ipa'] if dim_data['ipa'] is not None else '-'
+        ])
+    
+    # Response
+    output.seek(0)
+    return Response(
+        output,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=assessment_{assessment_id}.csv'}
+    )
 
 
 # ============================================
-# App starten
+# Main
 # ============================================
 if __name__ == '__main__':
     init_database()
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)

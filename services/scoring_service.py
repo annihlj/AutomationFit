@@ -42,6 +42,28 @@ class ScoringService:
             if dimension.calc_method == "economic_score":
                 # Spezielle Behandlung für wirtschaftliche Dimension
                 ScoringService._calculate_economic_dimension(assessment_id, dimension)
+            elif dimension.code == "2":
+                # Organisatorische Dimension: Berechne einmal und verwende für beide RPA und IPA
+                ScoringService._calculate_dimension_result(
+                    assessment_id, dimension, "RPA"
+                )
+                # Kopiere das RPA-Ergebnis für IPA
+                rpa_result = DimensionResult.query.filter_by(
+                    assessment_id=assessment_id,
+                    dimension_id=dimension.id,
+                    automation_type="RPA"
+                ).first()
+                
+                if rpa_result:
+                    ipa_result = DimensionResult(
+                        assessment_id=assessment_id,
+                        dimension_id=dimension.id,
+                        automation_type="IPA",
+                        mean_score=rpa_result.mean_score,
+                        is_excluded=rpa_result.is_excluded,
+                        excluded_by_question_id=rpa_result.excluded_by_question_id
+                    )
+                    db.session.add(ipa_result)
             else:
                 # Normale Berechnung für RPA und IPA
                 for automation_type in ["RPA", "IPA"]:
@@ -181,11 +203,11 @@ class ScoringService:
             if q:
                 values[q.code] = a.numeric_value
 
-        # 1.6 separat holen (liegt nicht in Dimension 7)
         q_1_6 = Question.query.filter_by(
-            questionnaire_version_id=assessment.questionnaire_version_id,
-            code="1.6"
+        questionnaire_version_id=assessment.questionnaire_version_id,
+        code="1.6"
         ).first()
+
         if q_1_6:
             a_1_6 = Answer.query.filter_by(
                 assessment_id=assessment_id,
@@ -194,11 +216,24 @@ class ScoringService:
             if a_1_6 and a_1_6.numeric_value is not None:
                 values["1.6"] = a_1_6.numeric_value
 
+        # ✅ Default: wenn 1.6 fehlt oder None ist, nimm 1
+        values["1.6"] = float(values.get("1.6") or 1.0)
+
         required = ["1.6", "7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"]
         missing = [c for c in required if c not in values]
         if missing:
-            print(f"⚠️ Wirtschaftlichkeit: Werte fehlen: {missing}")
-            return
+            print(f"⚠️ Wirtschaftlichkeit: Werte fehlen: {missing} - Keine Berechnung möglich")
+            # Erstelle leere DimensionResults ohne Score
+            for auto in ["RPA", "IPA"]:
+                db.session.add(DimensionResult(
+                    assessment_id=assessment_id,
+                    dimension_id=dimension.id,
+                    automation_type=auto,
+                    mean_score=None,
+                    is_excluded=False,
+                    excluded_by_question_id=None
+                ))
+            return  # Beende die Funktion hier - keine Economic Metrics erstellen
 
         # Inputs
         anzahl_prozesse = max(float(values["1.6"]), 1.0)  # Schutz vor Division durch 0

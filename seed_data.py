@@ -4,7 +4,7 @@ Seed-Script für Testdaten (Dimensionen 1 & 2)
 from extensions import db
 from models.database import (
     QuestionnaireVersion, Dimension, Scale, ScaleOption, 
-    Question, OptionScore, Hint
+    Question, OptionScore, Hint, QuestionCondition
 )
 
     # ========================================
@@ -276,7 +276,6 @@ def seed_data():
 
     db.session.add_all([opt_v1, opt_v2, opt_v3, opt_v4, opt_v5, opt_v_na])
     db.session.flush()
-        # ========================================
     # ========================================
     # 4. DIMENSION 1: Plattformverfügbarkeit (Filterfragen)
     # ========================================
@@ -293,7 +292,7 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=1,
         is_filter_question=True,
-        filter_description="Wenn Ja -> Frage 1.2; wenn Nein -> direkt Frage 1.4"
+        filter_description="Wenn Ja -> Frage 1.2 und 1.3; wenn Nein -> direkt Frage 1.4"
     )
     db.session.add(q1_1)
     db.session.flush()
@@ -309,8 +308,8 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=2,
         is_filter_question=True,
-        depends_on_question_id=q1_1.id,
-        depends_on_option_id=opt_yes.id,
+        depends_on_question_id=q1_1.id,   # ok (single condition)
+        depends_on_option_id=opt_yes.id,  # ok (single condition)
         filter_description="Wird nur gezeigt wenn 1.1 = Ja"
     )
     db.session.add(q1_2)
@@ -327,15 +326,32 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=3,
         is_filter_question=True,
-        depends_on_question_id=q1_1.id,
-        depends_on_option_id=opt_yes.id,
+        depends_on_question_id=q1_1.id,   # ok (single condition)
+        depends_on_option_id=opt_yes.id,  # ok (single condition)
         filter_description="Wird nur gezeigt wenn 1.1 = Ja"
     )
     db.session.add(q1_3)
     db.session.flush()
     add_filter_scores(q1_3.id, yesno_options_all)
 
+    db.session.add(Hint(
+        question_id=q1_3.id,
+        scale_option_id=opt_yes.id,
+        automation_type=None,
+        hint_text="Die Plattform ist vorhanden, produktionsreif und funktional ausreichend.",
+        hint_type="info"
+    ))
+
+    db.session.add(Hint(
+        question_id=q1_3.id,
+        scale_option_id=opt_no.id,
+        automation_type=None,
+        hint_text="Die Plattformverfügbarkeit bzw. Plattformreife ist aktuell nicht vollständig gegeben.",
+        hint_type="info"
+    ))
+
     # 1.4 (wenn 1.1=Nein ODER 1.2=Nein ODER 1.3=Nein)
+    # -> NUR über QuestionCondition (keine Legacy-Felder setzen!)
     q1_4 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim1.id,
@@ -345,13 +361,36 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=4,
         is_filter_question=True,
+        depends_logic="any",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
         filter_description="Wird gezeigt wenn 1.1 = Nein ODER 1.2 = Nein ODER 1.3 = Nein"
     )
     db.session.add(q1_4)
     db.session.flush()
     add_filter_scores(q1_4.id, yesno_options_all)
 
-    # 1.5 (nur wenn 1.4 = Nein) | Bewertung: Ja='-', Nein='A'
+    db.session.add_all([
+        QuestionCondition(question_id=q1_4.id, depends_on_question_id=q1_1.id, depends_on_option_id=opt_no.id, sort_order=1),
+        QuestionCondition(question_id=q1_4.id, depends_on_question_id=q1_2.id, depends_on_option_id=opt_no.id, sort_order=2),
+        QuestionCondition(question_id=q1_4.id, depends_on_question_id=q1_3.id, depends_on_option_id=opt_no.id, sort_order=3),
+    ])
+    db.session.add(Hint(
+        question_id=q1_4.id,
+        scale_option_id=opt_no.id,
+        automation_type=None,
+        hint_text="Interne Ressourcen/Kompetenzen reichen aktuell nicht aus für eine Eigenentwicklung.",
+        hint_type="info"
+    ))
+    db.session.add(Hint(
+        question_id=q1_4.id,
+        scale_option_id=opt_yes.id,
+        automation_type=None,
+        hint_text="Interne Ressourcen/Kompetenzen sind ausreichend vorhanden. Damit ist die fehlende Plattformverfügbarkeit bzw. -reife kein limitierender Engpass für die Automatisierung.",
+        hint_type="info"
+    ))
+
+    # 1.5 (nur wenn 1.4 = Nein)
     q1_5 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim1.id,
@@ -367,23 +406,19 @@ def seed_data():
     )
     db.session.add(q1_5)
     db.session.flush()
-
-    # Standardmäßig '-' für alle Optionen ...
     add_filter_scores(q1_5.id, yesno_options_all)
-
-    # ... aber: Nein ist Ausschluss 'A' (für RPA & IPA)
     add_exclusion(q1_5.id, opt_no.id)
 
-    # Hint bei 1.5 = Nein
     db.session.add(Hint(
         question_id=q1_5.id,
         scale_option_id=opt_no.id,
-        automation_type=None,  # gilt für beide
-        hint_text="⚠️ Ohne externe Unterstützung ist eine Automatisierung nicht umsetzbar.",
+        automation_type=None,
+        hint_text="Ohne externe Unterstützung ist eine Automatisierung nicht umsetzbar.",
         hint_type="error"
     ))
 
-    # 1.6 (numerisch)
+    # 1.6 (nur wenn 1.1=Ja UND 1.2=Ja UND 1.3=Ja)
+    # -> ebenfalls sauber über QuestionCondition
     q1_6 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim1.id,
@@ -391,9 +426,19 @@ def seed_data():
         text="Für wie viele unterschiedliche Prozesse wird die Automatisierungsplattform derzeit insgesamt eingesetzt?",
         question_type="number",
         unit="Anzahl",
-        sort_order=6
+        sort_order=6,
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None
     )
     db.session.add(q1_6)
+    db.session.flush()
+
+    db.session.add_all([
+        QuestionCondition(question_id=q1_6.id, depends_on_question_id=q1_1.id, depends_on_option_id=opt_yes.id, sort_order=1),
+        QuestionCondition(question_id=q1_6.id, depends_on_question_id=q1_2.id, depends_on_option_id=opt_yes.id, sort_order=2),
+        QuestionCondition(question_id=q1_6.id, depends_on_question_id=q1_3.id, depends_on_option_id=opt_yes.id, sort_order=3),
+    ])
     
     # ========================================
     
@@ -451,7 +496,7 @@ def seed_data():
         text="Das Automatisierungsvorhaben wird von der Führungsebene unterstützt.",
         question_type="single_choice",
         scale_id=scale_likert.id,
-        sort_order=6
+        sort_order=6,
     )
     q2_7 = Question(
         questionnaire_version_id=qv.id,
@@ -572,6 +617,7 @@ def seed_data():
     
     # ========================================
     
+        
     q4_1 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -581,7 +627,7 @@ def seed_data():
         scale_id=scale_data_structure.id,
         sort_order=1
     )
-    
+
     q4_2 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -591,7 +637,7 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=2
     )
-    
+
     q4_3 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -601,7 +647,10 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=3
     )
-    # 4.4 nur wenn 4.1 = "unstrukturiert" (opt_ds3)
+
+    db.session.add_all([q4_1, q4_2, q4_3])
+    db.session.flush()
+
     q4_4 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -610,13 +659,13 @@ def seed_data():
         question_type="single_choice",
         scale_id=scale_yesno.id,
         sort_order=4,
-        depends_on_question_id=q4_1.id,
-        depends_on_option_id=opt_ds3.id,
+        is_filter_question=True,
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
         filter_description='Wird nur gezeigt wenn 4.1 = "unstrukturiert"'
     )
 
-
-    # 4.5 nur wenn 4.1 = "unstrukturiert"
     q4_5 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -625,12 +674,13 @@ def seed_data():
         question_type="single_choice",
         scale_id=scale_yesno.id,
         sort_order=5,
-        depends_on_question_id=q4_1.id,
-        depends_on_option_id=opt_ds3.id,
+        is_filter_question=True,
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
         filter_description='Wird nur gezeigt wenn 4.1 = "unstrukturiert"'
     )
 
-    # 4.6 nur wenn 4.1 = "unstrukturiert"
     q4_6 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim4.id,
@@ -639,12 +689,21 @@ def seed_data():
         question_type="single_choice",
         scale_id=scale_yesno.id,
         sort_order=6,
-        depends_on_question_id=q4_1.id,
-        depends_on_option_id=opt_ds3.id,
+        is_filter_question=True,
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
         filter_description='Wird nur gezeigt wenn 4.1 = "unstrukturiert"'
     )
-    db.session.add_all([q4_1, q4_2, q4_3, q4_4, q4_5, q4_6])
+
+    db.session.add_all([q4_4, q4_5, q4_6])
     db.session.flush()
+
+    db.session.add_all([
+        QuestionCondition(question_id=q4_4.id, depends_on_question_id=q4_1.id, depends_on_option_id=opt_ds3.id, sort_order=1),
+        QuestionCondition(question_id=q4_5.id, depends_on_question_id=q4_1.id, depends_on_option_id=opt_ds3.id, sort_order=1),
+        QuestionCondition(question_id=q4_6.id, depends_on_question_id=q4_1.id, depends_on_option_id=opt_ds3.id, sort_order=1),
+    ])
 
     # ========================================
     
@@ -737,33 +796,42 @@ def seed_data():
         scale_id=scale_yesno.id,
         sort_order=4
     )
-    # 6.5 nur wenn 6.4 = Ja (opt_yes)
+    db.session.add_all([q6_1, q6_2, q6_3, q6_4])
+    db.session.flush()
+
     q6_5 = Question(
         questionnaire_version_id=qv.id,
-        dimension_id=dim6.id,   # falls du dim_risiko so benannt hast
+        dimension_id=dim6.id,
         code="6.5",
         text="Es existieren definierte Maßnahmen zum Schutz dieser Daten (z. B. Verschlüsselung, sichere Speicherung).",
         question_type="single_choice",
-        scale_id=scale_likert.id,     # oder deine Risiko-Likert-Skala
+        scale_id=scale_likert.id,
         sort_order=5,
-        depends_on_question_id=q6_4.id,
-        depends_on_option_id=opt_yes.id,
-        filter_description='Wird nur gezeigt wenn 6.4 = "Ja"'
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
     )
 
-    # 6.6 nur wenn 6.4 = Ja
     q6_6 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim6.id,
         code="6.6",
         text="Bei Nutzung nicht selbst gehosteter (externer/online) KI wird ausgeschlossen, dass personenbezogene oder sensible Daten in Trainings- oder Lernprozesse einfließen.",
-        question_type="single_choice",  # falls du es als Frage führst
-        scale_id=scale_likert.id,       # oder eigene Skala/yesno je nach Modell
+        question_type="single_choice",
+        scale_id=scale_likert.id,
         sort_order=6,
-        depends_on_question_id=q6_4.id,
-        depends_on_option_id=opt_yes.id,
-        filter_description='Wird nur gezeigt wenn 6.4 = "Ja"'
+        depends_logic="all",
+        depends_on_question_id=None,
+        depends_on_option_id=None,
     )
+
+    db.session.add_all([q6_5, q6_6])
+    db.session.flush()
+
+    db.session.add_all([
+        QuestionCondition(question_id=q6_5.id, depends_on_question_id=q6_4.id, depends_on_option_id=opt_yes.id, sort_order=1),
+        QuestionCondition(question_id=q6_6.id, depends_on_question_id=q6_4.id, depends_on_option_id=opt_yes.id, sort_order=1),
+    ])
     q6_7 = Question(
         questionnaire_version_id=qv.id,
         dimension_id=dim6.id,
@@ -832,7 +900,7 @@ def seed_data():
         sort_order=13
     )
     
-    db.session.add_all([q6_1, q6_2, q6_3, q6_4, q6_5, q6_6, q6_7, q6_8, q6_9, q6_10, q6_11, q6_12, q6_13])
+    db.session.add_all([q6_7, q6_8, q6_9, q6_10, q6_11, q6_12, q6_13])
     db.session.flush()
 
         # ========================================

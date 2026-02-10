@@ -59,7 +59,20 @@ class ScaleOption(db.Model):
         db.UniqueConstraint("scale_id", "code", name="uq_scale_option"),
     )
 
+class QuestionCondition(db.Model):
+    __tablename__ = "question_condition"
+    id = db.Column(db.Integer, primary_key=True)
 
+    # Die abhängige Frage
+    question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=False)
+
+    # Parent-Frage
+    depends_on_question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=False)
+
+    # Option, die gewählt sein muss
+    depends_on_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=False)
+
+    sort_order = db.Column(db.Integer, default=0)
 class Question(db.Model):
     __tablename__ = "question"
     id = db.Column(db.Integer, primary_key=True)
@@ -77,7 +90,7 @@ class Question(db.Model):
     depends_on_question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=True)
     depends_on_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
     filter_description = db.Column(db.Text, nullable=True)
-
+    depends_logic = db.Column(db.String(10), default="all", nullable=False)
     __table_args__ = (
         db.UniqueConstraint("questionnaire_version_id", "code", name="uq_question_code"),
     )
@@ -88,7 +101,14 @@ class Question(db.Model):
     dependent_questions = db.relationship('Question', 
                                          backref=db.backref('parent_question', remote_side=[id]),
                                          foreign_keys=[depends_on_question_id])
+    
 
+    conditions = db.relationship(
+        "QuestionCondition",
+        foreign_keys=[QuestionCondition.question_id],
+        backref="question",
+        cascade="all, delete-orphan"
+    )
 
 class OptionScore(db.Model):
     __tablename__ = "option_score"
@@ -144,6 +164,7 @@ class Answer(db.Model):
     - is_applicable wird in Phase 1 immer auf TRUE gesetzt
     - In Phase 3 wird is_applicable basierend auf Filterlogik gesetzt
     - NULL-Werte in scale_option_id/numeric_value = unbeantwortete Frage
+    - Bei Multiple Choice: Mehrere Answer-Zeilen pro Frage möglich (eine pro gewählter Option)
     """
     __tablename__ = "answer"
     id = db.Column(db.Integer, primary_key=True)
@@ -158,8 +179,11 @@ class Answer(db.Model):
     is_applicable = db.Column(db.Boolean, default=True, nullable=False)
 
     __table_args__ = (
-        # WICHTIG: Constraint angepasst - is_applicable ist jetzt Teil des Unique Keys
-        db.UniqueConstraint("assessment_id", "question_id", name="uq_answer_assessment_question"),
+        # WICHTIG: Für Multiple Choice erlauben wir mehrere Antworten pro Frage
+        # Unique Constraint auf assessment_id + question_id + scale_option_id
+        # Damit kann jede Option nur einmal pro Assessment/Frage gewählt werden
+        db.UniqueConstraint("assessment_id", "question_id", "scale_option_id", 
+                          name="uq_answer_assessment_question_option"),
     )
 
     # Relationships
@@ -230,3 +254,27 @@ class Hint(db.Model):
     # Relationships
     question_obj = db.relationship('Question', backref='hints')
     scale_option = db.relationship('ScaleOption', backref='hints')
+
+
+class SharedDimensionAnswer(db.Model):
+    """
+    Gemeinsame Antworten für Dimensionen (Plattform & Organisation)
+    Diese Antworten werden dimensional gespeichert und bei neuen Assessments 
+    automatisch übernommen, wenn die entsprechende Option aktiviert ist.
+    """
+    __tablename__ = "shared_dimension_answer"
+    id = db.Column(db.Integer, primary_key=True)
+    dimension_id = db.Column(db.Integer, db.ForeignKey("dimension.id"), nullable=False)
+    question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=False)
+    scale_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
+    numeric_value = db.Column(db.Float, nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("dimension_id", "question_id", name="uq_shared_dimension_answer"),
+    )
+
+    # Relationships
+    dimension_obj = db.relationship('Dimension', backref='shared_answers')
+    question_obj = db.relationship('Question', backref='shared_answers')
+    scale_option = db.relationship('ScaleOption', backref='shared_answers')

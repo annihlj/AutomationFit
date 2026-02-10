@@ -116,7 +116,7 @@
                 Scores zu sehen.</p>
 
             {% for dim in breakdown %}
-            <div class="dimension-detail">
+            <div class="dimension-detail" id="dim-{{ loop.index }}">
                 <div class="dimension-header" onclick="toggleDimension('dim-{{ loop.index }}')">
                     <h4>
                         <span class="expand-icon" id="icon-dim-{{ loop.index }}">▶</span>
@@ -140,22 +140,22 @@
                         {% if not dim.is_shared %}
                         <div>
                             <span class="muted" style="font-size:0.875rem">RPA:</span>
-                            {% if dim.excluded_rpa %}
+                            {% if dim.rpa_excluded %}
                             <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
-                            {% elif dim.score_rpa %}
+                            {% elif dim.rpa_score %}
                             <span style="color:#60a5fa; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{
-                                "%.2f"|format(dim.score_rpa) }}</span>
+                                "%.2f"|format(dim.rpa_score) }}</span>
                             {% else %}
                             <span class="muted" style="margin-left:0.5rem">–</span>
                             {% endif %}
                         </div>
                         <div>
                             <span class="muted" style="font-size:0.875rem">IPA:</span>
-                            {% if dim.excluded_ipa %}
+                            {% if dim.ipa_excluded %}
                             <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
-                            {% elif dim.score_ipa %}
+                            {% elif dim.ipa_score %}
                             <span style="color:#34d399; font-weight:700; font-size:1.1rem; margin-left:0.5rem">{{
-                                "%.2f"|format(dim.score_ipa) }}</span>
+                                "%.2f"|format(dim.ipa_score) }}</span>
                             {% else %}
                             <span class="muted" style="margin-left:0.5rem">–</span>
                             {% endif %}
@@ -188,7 +188,7 @@
 
                     {% if dim.answers %}
                     <div style="padding:0.5rem 0">
-                        <div class="answer-item" style="background:#1a2332; font-weight:600; font-size:0.875rem">
+                        <div class="answer-item answer-header">
                             <div>Frage</div>
                             <div style="text-align:center">Antwort</div>
                             {% if not dim.is_shared %}
@@ -199,13 +199,12 @@
                         {% for answer in dim.answers %}
                         <div class="answer-item">
                             <div class="question-text">
-                                <span style="color:var(--accent); font-weight:600">{{ answer.question_code }}</span>
-                                <span style="margin-left:0.5rem">{{ answer.question_text }}</span>
+                                <span class="question-code">{{ answer.question_code }}</span>
+                                <span class="question-label">{{ answer.question_text }}</span>
                             </div>
                             <div class="answer-value" style="text-align:center">
-                                <!-- Phase 3: Nicht anwendbar anzeigen -->
                                 {% if answer.get('is_applicable') == False %}
-                                <em style="color:#9ca3af;">Nicht anwendbar 🔒</em>
+                                <em class="not-applicable">Nicht anwendbar 🔒</em>
                                 {% else %}
                                 {{ answer.answer }}
                                 {% endif %}
@@ -215,30 +214,96 @@
                                 {% if answer.get('is_applicable') == False %}
                                 <span class="muted">–</span>
                                 {% elif answer.rpa_score == 'AUSSCHLUSS' %}
-                                <span style="color:#f87171; font-weight:600">❌</span>
+                                <span class="score-badge excluded">❌</span>
                                 {% elif answer.rpa_score == 'N/A' %}
-                                <span class="muted">–</span>
+                                <span class="score-badge na">–</span>
                                 {% elif answer.rpa_score %}
-                                <span style="color:#60a5fa; font-weight:600">{{ answer.rpa_score }}</span>
+                                <span class="score-badge rpa">{{ answer.rpa_score }}</span>
                                 {% else %}
-                                <span class="muted">–</span>
+                                <span class="score-badge na">–</span>
                                 {% endif %}
                             </div>
                             <div style="text-align:center">
                                 {% if answer.get('is_applicable') == False %}
                                 <span class="muted">–</span>
                                 {% elif answer.ipa_score == 'AUSSCHLUSS' %}
-                                <span style="color:#f87171; font-weight:600">❌</span>
+                                <span class="score-badge excluded">❌</span>
                                 {% elif answer.ipa_score == 'N/A' %}
-                                <span class="muted">–</span>
+                                <span class="score-badge na">–</span>
                                 {% elif answer.ipa_score %}
-                                <span style="color:#34d399; font-weight:600">{{ answer.ipa_score }}</span>
+                                <span class="score-badge ipa">{{ answer.ipa_score }}</span>
                                 {% else %}
-                                <span class="muted">–</span>
+                                <span class="score-badge na">–</span>
                                 {% endif %}
                             </div>
                             {% endif %}
                         </div>
+                        <style>
+                            /* Verbesserte Tabelle für Dimensionen */
+                            .answer-header {
+                                background: #f3f4f6;
+                                font-weight: 700;
+                                font-size: 0.95rem;
+                                border-radius: 8px 8px 0 0;
+                            }
+
+                            .answer-item {
+                                background: #fff;
+                                font-size: 0.92rem;
+                            }
+
+                            .answer-item:nth-child(even) {
+                                background: #f8fafc;
+                            }
+
+                            .question-code {
+                                color: var(--accent);
+                                font-weight: 600;
+                                margin-right: 0.5rem;
+                            }
+
+                            .question-label {
+                                color: var(--text);
+                            }
+
+                            .not-applicable {
+                                color: #9ca3af;
+                                font-style: italic;
+                            }
+
+                            .score-badge {
+                                display: inline-block;
+                                padding: 0.25rem 0.75rem;
+                                border-radius: 999px;
+                                font-weight: 600;
+                                font-size: 0.85rem;
+                                text-align: center;
+                            }
+
+                            .score-badge.rpa {
+                                background: #eff6ff;
+                                color: #3b82f6;
+                                border: 1px solid #dbeafe;
+                            }
+
+                            .score-badge.ipa {
+                                background: #ecfdf5;
+                                color: #10b981;
+                                border: 1px solid #d1fae5;
+                            }
+
+                            .score-badge.excluded {
+                                background: #fef2f2;
+                                color: #ef4444;
+                                border: 1px solid #fee2e2;
+                            }
+
+                            .score-badge.na {
+                                background: #f1f5f9;
+                                color: #94a3b8;
+                                border: 1px solid #e2e8f0;
+                            }
+                        </style>
                         {% endfor %}
                     </div>
                     {% else %}
@@ -258,23 +323,20 @@
 
         <!-- Wirtschaftlichkeitsbetrachtung -->
         {% if economic_metrics %}
-        <section class="card" style="margin-top:1rem">
-            <h3 style="margin:.25rem 0">Wirtschaftlichkeit (Phase 4)</h3>
+        <section class="card economic-card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">Wirtschaftlichkeit</h3>
             <p class="muted" style="margin:.25rem 0 1rem">Berechnete Werte basierend auf Ihren Angaben aus Dimension 7
             </p>
 
-            <div class="grid grid-3" style="gap:1rem">
+            <div class="grid grid-3 economic-grid" style="gap:1rem">
                 <!-- ROI -->
                 {% if 'roi' in economic_metrics %}
-                <div
-                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
-                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Return on Investment (ROI)
-                    </div>
-                    <div
-                        style="font-size:2rem; font-weight:700; color:{{ 'var(--ok)' if economic_metrics.roi.value > 0 else 'var(--bad)' }}">
-                        {{ "{:+.1%}".format(economic_metrics.roi.value) }}
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">
+                <div class="eco-box">
+                    <div class="eco-label">Return on Investment (ROI)</div>
+                    <div class="eco-value"
+                        style="color:{{ 'var(--ok)' if economic_metrics.roi.value > 0 else 'var(--bad)' }}">{{
+                        "{:+.1%}".format(economic_metrics.roi.value) }}</div>
+                    <div class="eco-desc">
                         {% if economic_metrics.roi.value > 1.0 %}✅ Sehr rentabel
                         {% elif economic_metrics.roi.value > 0.5 %}✅ Rentabel
                         {% elif economic_metrics.roi.value > 0.2 %}⚠️ Mäßig rentabel
@@ -287,25 +349,20 @@
 
                 <!-- Personeller Nutzen -->
                 {% if 'personeller_nutzen' in economic_metrics %}
-                <div
-                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
-                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Personeller Nutzen</div>
-                    <div style="font-size:2rem; font-weight:700; color:var(--accent)">
-                        {{ "{:,.0f}".format(economic_metrics.personeller_nutzen.value) }} €
+                <div class="eco-box">
+                    <div class="eco-label">Personeller Nutzen</div>
+                    <div class="eco-value accent">{{ "{:,.0f}".format(economic_metrics.personeller_nutzen.value) }} €
                     </div>
-                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">pro Jahr</div>
+                    <div class="eco-desc">pro Jahr</div>
                 </div>
                 {% endif %}
 
                 <!-- FTE-Einsparung -->
                 {% if 'fte_einsparung' in economic_metrics %}
-                <div
-                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
-                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">FTE-Einsparung</div>
-                    <div style="font-size:2rem; font-weight:700; color:var(--accent)">
-                        {{ "%.2f"|format(economic_metrics.fte_einsparung.value) }}
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">Vollzeitäquivalente</div>
+                <div class="eco-box">
+                    <div class="eco-label">FTE-Einsparung</div>
+                    <div class="eco-value accent">{{ "%.2f"|format(economic_metrics.fte_einsparung.value) }}</div>
+                    <div class="eco-desc">Vollzeitäquivalente</div>
                 </div>
                 {% endif %}
             </div>
@@ -313,27 +370,71 @@
             <div class="grid grid-2" style="gap:1rem; margin-top:1rem">
                 <!-- Initiale Fixkosten -->
                 {% if 'initiale_fixkosten' in economic_metrics %}
-                <div
-                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
-                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Initiale Fixkosten</div>
-                    <div style="font-size:1.5rem; font-weight:700; color:var(--text)">
-                        {{ "{:,.2f}".format(economic_metrics.initiale_fixkosten.value) }} €
+                <div class="eco-box">
+                    <div class="eco-label">Initiale Fixkosten</div>
+                    <div class="eco-value highlight">{{ "{:,.2f}".format(economic_metrics.initiale_fixkosten.value) }} €
                     </div>
-                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">Einmalige Investition</div>
+                    <div class="eco-desc">Einmalige Investition</div>
                 </div>
                 {% endif %}
 
                 <!-- Variable Kosten -->
                 {% if 'variable_kosten_jahr' in economic_metrics %}
-                <div
-                    style="padding:1.5rem; background:linear-gradient(135deg, #1a2332, #0f1722); border-radius:12px; border:1px solid var(--line)">
-                    <div style="font-size:0.875rem; color:var(--muted); margin-bottom:0.5rem">Variable Kosten</div>
-                    <div style="font-size:1.5rem; font-weight:700; color:var(--text)">
-                        {{ "{:,.2f}".format(economic_metrics.variable_kosten_jahr.value) }} €
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">pro Jahr</div>
+                <div class="eco-box">
+                    <div class="eco-label">Variable Kosten</div>
+                    <div class="eco-value highlight">{{ "{:,.2f}".format(economic_metrics.variable_kosten_jahr.value) }}
+                        €</div>
+                    <div class="eco-desc">pro Jahr</div>
                 </div>
                 {% endif %}
+                <style>
+                    .economic-card {
+                        background: #f8fafc;
+                    }
+
+                    .economic-grid {
+                        margin-bottom: 0;
+                    }
+
+                    .eco-box {
+                        background: #fff;
+                        border: 1px solid var(--line);
+                        border-radius: 12px;
+                        box-shadow: var(--shadow-md);
+                        padding: 1.5rem;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 0.5rem;
+                    }
+
+                    .eco-label {
+                        font-size: 1rem;
+                        color: #334155;
+                        font-weight: 600;
+                        margin-bottom: 0.25rem;
+                    }
+
+                    .eco-value {
+                        font-size: 2rem;
+                        font-weight: 700;
+                        color: var(--text);
+                        margin-bottom: 0.25rem;
+                    }
+
+                    .eco-value.accent {
+                        color: var(--accent);
+                    }
+
+                    .eco-value.highlight {
+                        color: #2563eb;
+                    }
+
+                    .eco-desc {
+                        font-size: 0.95rem;
+                        color: var(--muted);
+                    }
+                </style>
             </div>
 
             <div
@@ -396,8 +497,7 @@
             <form method="get" action="{{ url_for('index') }}">
                 <button type="submit" class="secondary">Neuen Anwendungsfall bewerten</button>
             </form>
-            <form method="post" action="{{ url_for('export_result') }}">
-                <input type="hidden" name="assessment_id" value="{{ run_id }}">
+            <form method="get" action="{{ url_for('export_assessment', assessment_id=run_id) }}">
                 <button type="submit">Ergebnis exportieren</button>
             </form>
         </div>
