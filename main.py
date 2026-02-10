@@ -6,12 +6,14 @@ Umfasst:
 - Phase 4: Korrekte Berechnung + Wirtschaftlichkeit
 """
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 import os
+import csv
+from io import StringIO
 
 # Imports für Datenbank
 from extensions import db
-from models.database_v2 import (
+from models.database import (
     QuestionnaireVersion, Dimension, Question, ScaleOption,
     Process, Assessment, Answer, DimensionResult, TotalResult, OptionScore, Hint
 )
@@ -249,7 +251,7 @@ def index():
             'status': 'not_started'  # Phase 2: Wird im Template aktualisiert
         })
     
-    return render_template('index_phase234.html', 
+    return render_template('index.html', 
                          questionnaire=qv,
                          dimensions=dimensions_data)
 
@@ -375,7 +377,7 @@ def edit_assessment(assessment_id):
         'industry': process.industry or ''
     }
     
-    return render_template('index_phase234.html', 
+    return render_template('index.html', 
                          questionnaire=qv,
                          dimensions=dimensions_data,
                          edit_mode=True,
@@ -877,6 +879,74 @@ def view_assessment(assessment_id):
     }
 
     return render_template("result.html", **result_data)
+
+
+# ============================================
+# Route: Ergebnis exportieren
+# ============================================
+@app.route('/export_result', methods=['POST'])
+def export_result():
+    """Exportiert Assessment-Ergebnisse als CSV"""
+    assessment_id = request.form.get('assessment_id')
+    if not assessment_id:
+        return "Assessment ID erforderlich", 400
+
+    # Falls run_id im Format ASS-<id> übergeben wurde
+    try:
+        assessment_id = int(str(assessment_id).replace('ASS-', ''))
+    except (ValueError, AttributeError):
+        return "Ungültige Assessment ID", 400
+
+    assessment = Assessment.query.get_or_404(assessment_id)
+    process = db.session.get(Process, assessment.process_id)
+    total_result = TotalResult.query.filter_by(assessment_id=assessment_id).first()
+
+    if not total_result:
+        return "Assessment wurde nicht gefunden", 404
+
+    # Erstelle CSV
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';')
+
+    # Meta
+    writer.writerow(['AutomationFit Assessment Export'])
+    writer.writerow([])
+    writer.writerow(['Prozess-Name', process.name or ''])
+    writer.writerow(['Industrie', process.industry or ''])
+    writer.writerow(['Assessment ID', f'ASS-{assessment.id}'])
+    writer.writerow(['Erstellt am', assessment.created_at.strftime('%d.%m.%Y %H:%M') if assessment.created_at else 'N/A'])
+    writer.writerow([])
+
+    # Gesamtergebnisse
+    writer.writerow(['Gesamtergebnisse'])
+    writer.writerow(['RPA Score', total_result.total_rpa if total_result.total_rpa is not None else 'N/A'])
+    writer.writerow(['IPA Score', total_result.total_ipa if total_result.total_ipa is not None else 'N/A'])
+    writer.writerow(['Empfehlung', total_result.recommendation or 'N/A'])
+    writer.writerow([])
+
+    # Dimensionen
+    writer.writerow(['Dimensionen'])
+    writer.writerow(['Dimension', 'RPA Score', 'IPA Score', 'RPA Ausgeschlossen', 'IPA Ausgeschlossen'])
+    qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
+    dimensions = Dimension.query.filter_by(questionnaire_version_id=qv.id).order_by(Dimension.sort_order).all()
+
+    for dimension in dimensions:
+        dim_result_rpa = DimensionResult.query.filter_by(assessment_id=assessment_id, dimension_id=dimension.id, automation_type="RPA").first()
+        dim_result_ipa = DimensionResult.query.filter_by(assessment_id=assessment_id, dimension_id=dimension.id, automation_type="IPA").first()
+
+        rpa_score = dim_result_rpa.mean_score if dim_result_rpa and not dim_result_rpa.is_excluded else 'N/A'
+        ipa_score = dim_result_ipa.mean_score if dim_result_ipa and not dim_result_ipa.is_excluded else 'N/A'
+        rpa_excluded = 'Ja' if (dim_result_rpa and dim_result_rpa.is_excluded) else 'Nein'
+        ipa_excluded = 'Ja' if (dim_result_ipa and dim_result_ipa.is_excluded) else 'Nein'
+
+        writer.writerow([dimension.code, rpa_score, ipa_score, rpa_excluded, ipa_excluded])
+
+    csv_data = output.getvalue()
+    output.close()
+
+    resp = Response(csv_data, mimetype='text/csv')
+    resp.headers['Content-Disposition'] = f'attachment; filename=Assessment_ASS-{assessment.id}.csv'
+    return resp
 
 
 # ============================================

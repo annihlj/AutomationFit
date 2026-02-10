@@ -4,8 +4,9 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Ergebnis – Automation Fit</title>
+    <title>Ergebnis – Automation Fit (Phase 2+3+4)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phase234.css') }}">
 </head>
 
 <body>
@@ -42,7 +43,7 @@
             </div>
         </header>
 
-        <!-- ⭐ NEU: BEARBEITEN BUTTON -->
+        <!-- BEARBEITEN BUTTON -->
         {% if assessment_id %}
         <div style="margin-top: 1rem; margin-bottom: 1rem; text-align: right;">
             <a href="{{ url_for('edit_assessment', assessment_id=assessment_id) }}" style="display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; 
@@ -61,7 +62,6 @@
             }
         </style>
         {% endif %}
-        <!-- ENDE: BEARBEITEN BUTTON -->
 
         <!-- KPIs -->
         <section class="grid grid-3" style="margin-top:1rem">
@@ -121,8 +121,23 @@
                     <h4>
                         <span class="expand-icon" id="icon-dim-{{ loop.index }}">▶</span>
                         <strong>{{ dim.code }}.</strong> {{ dim.name }}
+
+                        <!-- Phase 2: Status Badge -->
+                        {% if dim.status == 'not_started' %}
+                        <span class="status-badge not-started" style="margin-left:0.5rem;">Nicht ausgefüllt</span>
+                        {% elif dim.status == 'partial' %}
+                        <span class="status-badge partial" style="margin-left:0.5rem;">Teilweise</span>
+                        {% elif dim.status == 'complete' %}
+                        <span class="status-badge complete" style="margin-left:0.5rem;">Vollständig</span>
+                        {% endif %}
+
+                        <!-- Phase 4: Shared Badge -->
+                        {% if dim.is_shared %}
+                        <span class="shared-badge" style="margin-left:0.5rem;">Gemeinsam</span>
+                        {% endif %}
                     </h4>
                     <div style="display:flex; gap:2rem; align-items:center">
+                        {% if not dim.is_shared %}
                         <div>
                             <span class="muted" style="font-size:0.875rem">RPA:</span>
                             {% if dim.excluded_rpa %}
@@ -145,17 +160,41 @@
                             <span class="muted" style="margin-left:0.5rem">–</span>
                             {% endif %}
                         </div>
+                        {% else %}
+                        <div>
+                            <span class="muted" style="font-size:0.875rem">Diese Dimension gilt für beide
+                                Automatisierungsarten</span>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 
                 <div class="dimension-content" id="content-dim-{{ loop.index }}">
+                    <!-- Phase 4: Info für Filter-Dimension -->
+                    {% if dim.calc_method == 'filter' %}
+                    <div style="padding:1rem; background:#fef3c7; border-radius:0.5rem; margin-bottom:1rem;">
+                        <strong>ℹ️ Filter-Dimension:</strong> Diese Dimension dient der Vorauswahl.
+                        Scores werden nicht berechnet, nur Ausschlusskriterien geprüft.
+                    </div>
+                    {% endif %}
+
+                    <!-- Phase 4: Info für Economic-Dimension -->
+                    {% if dim.calc_method == 'economic_score' %}
+                    <div style="padding:1rem; background:#dbeafe; border-radius:0.5rem; margin-bottom:1rem;">
+                        <strong>💰 Wirtschaftlichkeits-Dimension:</strong> Hier werden ROI, Payback-Period und weitere
+                        Kennzahlen berechnet.
+                    </div>
+                    {% endif %}
+
                     {% if dim.answers %}
                     <div style="padding:0.5rem 0">
                         <div class="answer-item" style="background:#1a2332; font-weight:600; font-size:0.875rem">
                             <div>Frage</div>
                             <div style="text-align:center">Antwort</div>
+                            {% if not dim.is_shared %}
                             <div style="text-align:center">RPA Score</div>
                             <div style="text-align:center">IPA Score</div>
+                            {% endif %}
                         </div>
                         {% for answer in dim.answers %}
                         <div class="answer-item">
@@ -164,10 +203,18 @@
                                 <span style="margin-left:0.5rem">{{ answer.question_text }}</span>
                             </div>
                             <div class="answer-value" style="text-align:center">
+                                <!-- Phase 3: Nicht anwendbar anzeigen -->
+                                {% if answer.get('is_applicable') == False %}
+                                <em style="color:#9ca3af;">Nicht anwendbar 🔒</em>
+                                {% else %}
                                 {{ answer.answer }}
+                                {% endif %}
                             </div>
+                            {% if not dim.is_shared %}
                             <div style="text-align:center">
-                                {% if answer.rpa_score == 'AUSSCHLUSS' %}
+                                {% if answer.get('is_applicable') == False %}
+                                <span class="muted">–</span>
+                                {% elif answer.rpa_score == 'AUSSCHLUSS' %}
                                 <span style="color:#f87171; font-weight:600">❌</span>
                                 {% elif answer.rpa_score == 'N/A' %}
                                 <span class="muted">–</span>
@@ -178,7 +225,9 @@
                                 {% endif %}
                             </div>
                             <div style="text-align:center">
-                                {% if answer.ipa_score == 'AUSSCHLUSS' %}
+                                {% if answer.get('is_applicable') == False %}
+                                <span class="muted">–</span>
+                                {% elif answer.ipa_score == 'AUSSCHLUSS' %}
                                 <span style="color:#f87171; font-weight:600">❌</span>
                                 {% elif answer.ipa_score == 'N/A' %}
                                 <span class="muted">–</span>
@@ -188,11 +237,19 @@
                                 <span class="muted">–</span>
                                 {% endif %}
                             </div>
+                            {% endif %}
                         </div>
                         {% endfor %}
                     </div>
                     {% else %}
-                    <p class="muted" style="padding:1rem">Keine Antworten erfasst.</p>
+                    <p class="muted" style="padding:1rem">
+                        <!-- Phase 2: Zeige unterschiedliche Nachricht basierend auf Status -->
+                        {% if dim.status == 'not_started' %}
+                        Diese Dimension wurde nicht ausgefüllt.
+                        {% else %}
+                        Keine Antworten erfasst.
+                        {% endif %}
+                    </p>
                     {% endif %}
                 </div>
             </div>
@@ -202,8 +259,9 @@
         <!-- Wirtschaftlichkeitsbetrachtung -->
         {% if economic_metrics %}
         <section class="card" style="margin-top:1rem">
-            <h3 style="margin:.25rem 0">Wirtschaftlichkeit</h3>
-            <p class="muted" style="margin:.25rem 0 1rem">Berechnete Werte basierend auf Ihren Angaben</p>
+            <h3 style="margin:.25rem 0">Wirtschaftlichkeit (Phase 4)</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Berechnete Werte basierend auf Ihren Angaben aus Dimension 7
+            </p>
 
             <div class="grid grid-3" style="gap:1rem">
                 <!-- ROI -->
@@ -217,16 +275,11 @@
                         {{ "{:+.1%}".format(economic_metrics.roi.value) }}
                     </div>
                     <div style="font-size:0.75rem; color:var(--muted); margin-top:0.25rem">
-                        {% if economic_metrics.roi.value > 1.0 %}
-                        ✅ Sehr rentabel
-                        {% elif economic_metrics.roi.value > 0.5 %}
-                        ✅ Rentabel
-                        {% elif economic_metrics.roi.value > 0.2 %}
-                        ⚠️ Mäßig rentabel
-                        {% elif economic_metrics.roi.value > 0 %}
-                        ⚠️ Gering rentabel
-                        {% else %}
-                        ❌ Nicht rentabel
+                        {% if economic_metrics.roi.value > 1.0 %}✅ Sehr rentabel
+                        {% elif economic_metrics.roi.value > 0.5 %}✅ Rentabel
+                        {% elif economic_metrics.roi.value > 0.2 %}⚠️ Mäßig rentabel
+                        {% elif economic_metrics.roi.value > 0 %}⚠️ Gering rentabel
+                        {% else %}❌ Nicht rentabel
                         {% endif %}
                     </div>
                 </div>

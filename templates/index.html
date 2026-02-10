@@ -6,10 +6,10 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Fragebogen – Automation Fit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phase234.css') }}">
 </head>
 
 <body>
-    <!-- Navigation -->
     <nav class="navbar">
         <div class="nav-container">
             <a href="{{ url_for('index') }}" class="nav-logo">
@@ -35,24 +35,22 @@
                 </h1>
                 <p class="lead">
                     {% if edit_mode %}
-                    <strong>Bearbeitungs-Modus:</strong> Passen Sie die Antworten an und speichern Sie die Änderungen.
+                    <strong>Bearbeitungs-Modus:</strong> Passen Sie die Antworten an.
                     {% else %}
-                    Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
+                    <strong>Phase 2-4:</strong> Dimensionen können einzeln ausgefüllt werden.
                     <br>
-                    <strong>Phase 1:</strong> Alle Fragen können beantwortet werden.
-                    Unbeantwortete Fragen werden gespeichert und bei der Auswertung übersprungen.
+                    <span style="color: #16a34a;">✓</span> Alle Fragen sind optional - Submit ist jederzeit möglich.
                     {% endif %}
                 </p>
             </div>
             <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
         </div>
 
-        <!-- ⭐ Form Action basierend auf Edit-Modus -->
         <form class="card" method="post"
             action="{% if edit_mode %}{{ url_for('update_assessment', assessment_id=assessment_id) }}{% else %}{{ url_for('evaluate') }}{% endif %}"
             id="mainForm">
 
-            <!-- 1) Use-Case Metadaten -->
+            <!-- Use-Case Metadaten -->
             <fieldset>
                 <legend>Anwendungsfall</legend>
                 <div class="grid grid-2">
@@ -63,24 +61,35 @@
                     </div>
                     <div>
                         <label for="industry">Branche</label>
-                        <input id="industry" name="industry" type="text"
-                            placeholder="z. B. Fertigung, Handel, Dienstleistung"
+                        <input id="industry" name="industry" type="text" placeholder="z. B. Fertigung, Handel"
                             value="{% if edit_mode and process_data %}{{ process_data.industry }}{% endif %}" />
                     </div>
                 </div>
 
                 <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
-                <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme"
+                <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten"
                     required>{% if edit_mode and process_data %}{{ process_data.description }}{% endif %}</textarea>
             </fieldset>
 
-            <!-- 2) Dimensionen & Fragen -->
+            <!-- Dimensionen & Fragen -->
             {% for dimension in dimensions %}
-            <fieldset class="dimension" style="margin-top:1.5rem">
+            <fieldset class="dimension" style="margin-top:1.5rem" data-dimension-id="{{ dimension.id }}">
                 <legend class="dimension-legend">
                     <button type="button" class="dimension-toggle" aria-expanded="false"
                         aria-controls="dimension-panel-{{ dimension.id }}" id="dimension-toggle-{{ dimension.id }}">
-                        <span>{{ dimension.code }}. {{ dimension.name }}</span>
+                        <span>
+                            {{ dimension.code }}. {{ dimension.name }}
+
+                            <!-- Phase 2: Status Badge -->
+                            <span class="dimension-status-badge" id="status-{{ dimension.id }}">
+                                <span class="status-badge not-started">Nicht gestartet</span>
+                            </span>
+
+                            <!-- Phase 4: Shared Badge -->
+                            {% if dimension.calc_method in ['filter', 'economic_score'] %}
+                            <span class="shared-badge">Gemeinsam</span>
+                            {% endif %}
+                        </span>
                         <span class="dimension-chevron" aria-hidden="true">▾</span>
                     </button>
                 </legend>
@@ -90,35 +99,37 @@
 
                     {% for question in dimension.questions %}
                     <div class="question-item" data-question-id="{{ question.id }}"
-                        style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
+                        data-question-code="{{ question.code }}" data-dimension-id="{{ dimension.id }}" {% if
+                        question.depends_on %} data-depends-on-question="{{ question.depends_on }}"
+                        data-depends-on-option="{{ question.depends_on_option }}" {% endif %} style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem;
+                         {% if question.depends_on and not edit_mode %}display:none;{% endif %}">
 
                         <label style="font-weight:600; display:block; margin-bottom:0.5rem">
                             {{ question.code }} - {{ question.text }}
-                            <span style="color:#6b7280; font-weight:normal; font-size:0.9em">
-                                (Optional - kann übersprungen werden)
-                            </span>
+                            <span style="color:#6b7280; font-weight:normal; font-size:0.9em">Info</span>
                         </label>
 
                         {% if question.type == 'number' %}
                         <!-- Number Input -->
-                        <input type="number" name="q_{{ question.id }}" min="0" step="1"
+                        <input type="number" name="q_{{ question.id }}" min="0" step="any"
                             placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}"
                             value="{% if question.answer is not none %}{{ question.answer }}{% endif %}"
-                            style="max-width:300px" />
+                            data-dimension-id="{{ dimension.id }}" style="max-width:300px" />
                         {% if question.unit %}
                         <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
                         {% endif %}
 
                         {% elif question.type == 'single_choice' %}
-                        <!-- Single Choice (Radio Buttons) -->
-                        <div class="likert" role="radiogroup" aria-label="{{ question.code }}">
+                        <!-- Single Choice -->
+                        <div class="likert" role="radiogroup">
                             <div class="likert-row likert-{{ question.options|length }}">
                                 {% for option in question.options %}
                                 <label class="likert-item {% if option.is_na %}is-na{% endif %}">
                                     <span class="likert-label">{{ option.label }}</span>
-                                    <input class="likert-input" type="radio" name="q_{{ question.id }}"
+                                    <input class="likert-input filter-trigger" type="radio" name="q_{{ question.id }}"
                                         value="{{ option.id }}" data-option-code="{{ option.code }}"
-                                        data-is-na="{{ '1' if option.is_na else '0' }}" {% if question.answer==option.id
+                                        data-option-id="{{ option.id }}" data-question-id="{{ question.id }}"
+                                        data-dimension-id="{{ dimension.id }}" {% if question.answer==option.id
                                         %}checked{% endif %} />
                                     <span class="likert-circle" aria-hidden="true"></span>
                                 </label>
@@ -126,17 +137,38 @@
                             </div>
                         </div>
 
+                        <!-- Hints -->
+                        {% if question.hints %}
+                        <div class="hints-container">
+                            {% for option in question.options %}
+                            {% if option.id in question.hints %}
+                            {% for hint in question.hints[option.id] %}
+                            <div class="hint hint-{{ hint.type }}" style="display:none;"
+                                data-option-id="{{ option.id }}" data-question-id="{{ question.id }}">
+                                <span class="hint-icon">
+                                    {% if hint.type == 'error' %}⚠️
+                                    {% elif hint.type == 'warning' %}⚡
+                                    {% else %}ℹ️{% endif %}
+                                </span>
+                                <span class="hint-text">{{ hint.text }}</span>
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
                         {% elif question.type == 'multiple_choice' %}
-                        <!-- Multiple Choice (Checkboxes) -->
-                        <div class="checkbox-group" role="group" aria-label="{{ question.code }}">
+                        <!-- Multiple Choice -->
+                        <div class="checkbox-group" role="group">
                             <div class="checkbox-row checkbox-{{ question.options|length }}">
                                 {% for option in question.options %}
                                 <label class="checkbox-item {% if option.is_na %}is-na{% endif %}">
                                     <span class="checkbox-label">{{ option.label }}</span>
                                     <input class="checkbox-input" type="checkbox" name="q_{{ question.id }}[]"
                                         value="{{ option.id }}" data-option-code="{{ option.code }}"
-                                        data-is-na="{{ '1' if option.is_na else '0' }}" {% if question.answer and
-                                        option.id in question.answer %}checked{% endif %} />
+                                        data-dimension-id="{{ dimension.id }}" {% if question.answer and option.id in
+                                        question.answer %}checked{% endif %} />
                                     <span class="checkbox-box" aria-hidden="true"></span>
                                 </label>
                                 {% endfor %}
@@ -149,7 +181,7 @@
             </fieldset>
             {% endfor %}
 
-            <!-- 3) Submit Actions -->
+            <!-- Submit Actions -->
             <div class="actions">
                 {% if edit_mode %}
                 <a href="{{ url_for('view_assessment', assessment_id=assessment_id) }}" class="secondary">Abbrechen</a>
@@ -163,7 +195,172 @@
     </div>
 
     <script>
+        console.log("🚀 Filterlogik-Script lädt...");
+
         document.addEventListener("DOMContentLoaded", () => {
+            const form = document.getElementById('mainForm');
+
+            // ===== FILTERLOGIK - ZENTRALE FUNKTION =====
+            /**
+             * Diese Funktion steuert das Ein-/Ausblenden von abhängigen Fragen
+             * 
+             * Funktionsweise:
+             * 1. Wenn eine Frage beantwortet wird (z.B. Frage 1.1)
+             * 2. Suche alle Fragen die von dieser abhängen
+             * 3. Prüfe ob die gewählte Option die richtige ist (depends_on_option)
+             * 4. Wenn JA: Zeige abhängige Fragen
+             * 5. Wenn NEIN: Verstecke abhängige Fragen
+             */
+            function applyFilterLogic(questionId, selectedOptionId) {
+                console.log(`\n🔍 Filter-Check: Frage ${questionId}, Option ${selectedOptionId}`);
+
+                // Finde alle Fragen die von dieser Frage abhängen
+                const dependentQuestions = document.querySelectorAll(
+                    `[data-depends-on-question="${questionId}"]`
+                );
+
+                console.log(`   Gefunden: ${dependentQuestions.length} abhängige Fragen`);
+
+                dependentQuestions.forEach(depQuestion => {
+                    const requiredOptionId = depQuestion.dataset.dependsOnOption;
+                    const questionCode = depQuestion.dataset.questionCode;
+
+                    // Prüfe: Ist die gewählte Option die richtige?
+                    if (selectedOptionId == requiredOptionId) {
+                        // JA → Zeige Frage
+                        depQuestion.style.display = 'block';
+                        console.log(`   ✅ ${questionCode} eingeblendet (Option ${selectedOptionId} = ${requiredOptionId})`);
+                    } else {
+                        // NEIN → Verstecke Frage und lösche Antworten
+                        depQuestion.style.display = 'none';
+
+                        // Lösche alle Inputs in dieser Frage
+                        depQuestion.querySelectorAll('input[type="radio"]:checked').forEach(r => r.checked = false);
+                        depQuestion.querySelectorAll('input[type="checkbox"]:checked').forEach(c => c.checked = false);
+                        depQuestion.querySelectorAll('input[type="number"]').forEach(n => n.value = '');
+
+                        console.log(`   🔒 ${questionCode} ausgeblendet (Option ${selectedOptionId} ≠ ${requiredOptionId})`);
+                    }
+
+                    // Rekursiv: Wenn diese abhängige Frage auch Kinder hat, behandle die auch
+                    const depQuestionId = depQuestion.dataset.questionId;
+                    const checkedRadio = depQuestion.querySelector('input[type="radio"]:checked');
+                    if (checkedRadio && depQuestion.style.display === 'none') {
+                        // Frage wurde ausgeblendet → trigger Filter für deren Kinder
+                        applyFilterLogic(depQuestionId, null);
+                    }
+                });
+            }
+
+            // ===== EVENT LISTENER - Reagiere auf Radio-Button Änderungen =====
+            document.querySelectorAll('.filter-trigger').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    const questionId = e.target.dataset.questionId;
+                    const selectedOptionId = e.target.value;
+
+                    console.log(`\n📻 Radio geändert: Frage ${questionId} → Option ${selectedOptionId}`);
+
+                    // Wende Filter an
+                    applyFilterLogic(questionId, selectedOptionId);
+
+                    // Zeige Hints
+                    showHintsForOption(questionId, selectedOptionId);
+
+                    // Update Status
+                    const dimensionId = e.target.dataset.dimensionId;
+                    if (dimensionId) {
+                        updateDimensionStatus(dimensionId);
+                    }
+                });
+            });
+
+            // ===== INITIAL: Filter beim Laden anwenden (Edit-Modus) =====
+            console.log("\n🔄 Initial-Filter wird angewendet...");
+            document.querySelectorAll('input[type="radio"]:checked').forEach(radio => {
+                const questionId = radio.dataset.questionId;
+                const selectedOptionId = radio.value;
+
+                if (questionId && selectedOptionId) {
+                    console.log(`   Initial: Frage ${questionId} = Option ${selectedOptionId}`);
+                    applyFilterLogic(questionId, selectedOptionId);
+                }
+            });
+
+            // ===== HINTS =====
+            function showHintsForOption(questionId, optionId) {
+                // Verstecke alle Hints dieser Frage
+                const allHints = document.querySelectorAll(`[data-question-id="${questionId}"].hint`);
+                allHints.forEach(h => h.style.display = 'none');
+
+                // Zeige Hints für gewählte Option
+                const selectedHints = document.querySelectorAll(
+                    `[data-question-id="${questionId}"][data-option-id="${optionId}"].hint`
+                );
+                selectedHints.forEach(h => h.style.display = 'flex');
+            }
+
+            // ===== STATUS TRACKING =====
+            function updateDimensionStatus(dimensionId) {
+                const dimension = document.querySelector(`[data-dimension-id="${dimensionId}"]`);
+                if (!dimension) return;
+
+                const visibleQuestions = dimension.querySelectorAll(
+                    '.question-item:not([style*="display:none"]):not([style*="display: none"])'
+                );
+
+                let totalQuestions = 0;
+                let answeredQuestions = 0;
+
+                visibleQuestions.forEach(q => {
+                    const qid = q.dataset.questionId;
+                    totalQuestions++;
+
+                    const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
+                    const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
+                    const checkboxChecked = form.querySelectorAll(`input[name="q_${qid}[]"]:checked`).length > 0;
+
+                    if ((numberInput && numberInput.value.trim() !== '') || radioChecked || checkboxChecked) {
+                        answeredQuestions++;
+                    }
+                });
+
+                let status = 'not_started';
+                let badgeHtml = '';
+
+                if (answeredQuestions === 0) {
+                    status = 'not_started';
+                    badgeHtml = '<span class="status-badge not-started">Nicht gestartet</span>';
+                } else if (answeredQuestions < totalQuestions) {
+                    status = 'partial';
+                    badgeHtml = `<span class="status-badge partial">Teilweise (${answeredQuestions}/${totalQuestions})</span>`;
+                } else {
+                    status = 'complete';
+                    badgeHtml = '<span class="status-badge complete">Vollständig ✓</span>';
+                }
+
+                const statusBadge = document.getElementById(`status-${dimensionId}`);
+                if (statusBadge) {
+                    statusBadge.innerHTML = badgeHtml;
+                }
+            }
+
+            // Event Listener für Status-Updates
+            form.addEventListener('change', (e) => {
+                const dimensionId = e.target.dataset.dimensionId;
+                if (dimensionId) {
+                    updateDimensionStatus(dimensionId);
+                }
+            });
+
+            // Initial Status
+            document.querySelectorAll('[data-dimension-id]').forEach(dim => {
+                const dimId = dim.dataset.dimensionId;
+                if (dimId) {
+                    updateDimensionStatus(dimId);
+                }
+            });
+
+            // ===== DIMENSION TOGGLE =====
             // ===== Dimension Toggle Logic =====
             const toggles = document.querySelectorAll(".dimension-toggle");
 
@@ -187,8 +384,7 @@
                 });
             });
 
-            // ===== Multiple-Choice Exclusive Logic =====
-            // "Keine Angabe" (is_na) und "Keine der genannten" (code=NONE) sind exklusiv
+            // ===== CHECKBOX EXCLUSIVE LOGIC =====
             document.querySelectorAll('.question-item').forEach(qItem => {
                 const qid = qItem.dataset.questionId;
                 if (!qid) return;
@@ -196,23 +392,16 @@
                 const checkboxes = qItem.querySelectorAll(`input[type="checkbox"][name="q_${qid}[]"]`);
                 if (!checkboxes.length) return;
 
-                const isSpecial = (cb) => {
-                    return cb.dataset.isNa === "1" || cb.dataset.optionCode === "NONE";
-                };
-
+                const isSpecial = (cb) => cb.dataset.optionCode === "NONE" || cb.dataset.optionCode === "KA";
                 const specialBoxes = Array.from(checkboxes).filter(isSpecial);
                 const normalBoxes = Array.from(checkboxes).filter(cb => !isSpecial(cb));
 
                 checkboxes.forEach(cb => {
                     cb.addEventListener('change', () => {
-                        // Wenn Special (NA oder NONE) angehakt → alle normalen abwählen
                         if (isSpecial(cb) && cb.checked) {
                             normalBoxes.forEach(n => n.checked = false);
-                            // Andere Specials ebenfalls abwählen
                             specialBoxes.forEach(s => { if (s !== cb) s.checked = false; });
                         }
-
-                        // Wenn normal angehakt → Specials abwählen
                         if (!isSpecial(cb) && cb.checked) {
                             specialBoxes.forEach(s => s.checked = false);
                         }
@@ -220,39 +409,7 @@
                 });
             });
 
-            // ===== PHASE 1: KEINE strikte Validierung =====
-            // In Phase 1 können Fragen übersprungen werden
-            // Das Submit wird NICHT blockiert
-            const form = document.getElementById('mainForm');
-            if (form) {
-                form.addEventListener('submit', (e) => {
-                    // Nur Use-Case Pflichtfelder müssen ausgefüllt sein
-                    // Das HTML5 required-Attribut kümmert sich darum
-
-                    {% if edit_mode %}
-                    console.log('✅ Edit-Modus: Assessment wird aktualisiert');
-                    {% else %}
-                    console.log('✅ Phase 1: Form submitted - unbeantwortete Fragen werden als NULL gespeichert');
-                    {% endif %}
-
-                    // Optional: Statistik anzeigen
-                    const allQuestions = document.querySelectorAll('.question-item');
-                    let answeredCount = 0;
-
-                    allQuestions.forEach(q => {
-                        const qid = q.dataset.questionId;
-                        const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
-                        const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
-                        const checkboxChecked = form.querySelectorAll(`input[name="q_${qid}[]"]:checked`).length > 0;
-
-                        if ((numberInput && numberInput.value.trim() !== '') || radioChecked || checkboxChecked) {
-                            answeredCount++;
-                        }
-                    });
-
-                    console.log(`📊 ${answeredCount} von ${allQuestions.length} Fragen beantwortet`);
-                });
-            }
+            console.log("✅ Filterlogik-Script geladen!");
         });
     </script>
 </body>
