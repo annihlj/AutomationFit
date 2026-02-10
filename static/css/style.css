@@ -526,6 +526,76 @@ td.small {
     text-align: left;
 }
 
+/* --- Dimensionen UI Upgrade --- */
+
+.dimension {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    margin-top: 1.25rem;
+    padding: 0 !important;
+    /* Entfernt Standard-Abstände vom Fieldset */
+    background: #ffffff;
+    overflow: hidden;
+    display: block;
+    width: 100%;
+}
+
+.dimension-legend {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.dimension-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    background-color: #f8fafc;
+    border: none;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #334155;
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.dimension-toggle:hover {
+    background-color: #f1f5f9;
+}
+
+/* --- Pfeil-Verbesserung --- */
+.dimension-chevron {
+    display: inline-block;
+    font-size: 1.2rem;
+    color: #94a3b8;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Sanfte Drehung */
+    transform: rotate(-90deg);
+    /* Startzustand: Pfeil zeigt nach links/zu */
+}
+
+/* Wenn das Attribut aria-expanded auf true springt, dreht sich der Pfeil */
+.dimension-toggle[aria-expanded="true"] .dimension-chevron {
+    transform: rotate(0deg);
+    /* Zeigt nach unten, wenn offen */
+    color: #2563eb;
+    /* Optional: Pfeil wird blau, wenn aktiv */
+}
+
+.dimension-panel {
+    padding: 1.5rem;
+    background: #fff;
+}
+
+.dimension-panel[hidden] {
+    display: none;
+}
+
 /* legend unsichtbar, aber für Screenreader vorhanden */
 .sr-only {
     position: absolute !important;

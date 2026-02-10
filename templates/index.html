@@ -171,18 +171,19 @@
                 const panelId = btn.getAttribute("aria-controls");
                 const panel = document.getElementById(panelId);
 
-                // Initial: collapsed
+                // Initialzustand beim Laden setzen
                 const isExpanded = btn.getAttribute("aria-expanded") === "true";
                 panel.hidden = !isExpanded;
 
-                const chevron = btn.querySelector('.dimension-chevron');
-                if (chevron) chevron.textContent = isExpanded ? '▾' : '▸';
-
                 btn.addEventListener("click", () => {
                     const expanded = btn.getAttribute("aria-expanded") === "true";
+
+                    // Toggle Zustand
                     btn.setAttribute("aria-expanded", String(!expanded));
                     panel.hidden = expanded;
-                    if (chevron) chevron.textContent = expanded ? '▸' : '▾';
+
+                    // Die Textänderung (chevron.textContent) haben wir gelöscht, 
+                    // da das CSS nun die Rotation übernimmt!
                 });
             });
 
