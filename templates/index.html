@@ -26,18 +26,31 @@
     <div class="container">
         <div class="topbar">
             <div>
-                <h1>Entscheidungsunterstützung: RPA vs. IPA</h1>
+                <h1>
+                    {% if edit_mode %}
+                    ✏️ Assessment bearbeiten
+                    {% else %}
+                    Entscheidungsunterstützung: RPA vs. IPA
+                    {% endif %}
+                </h1>
                 <p class="lead">
+                    {% if edit_mode %}
+                    <strong>Bearbeitungs-Modus:</strong> Passen Sie die Antworten an und speichern Sie die Änderungen.
+                    {% else %}
                     Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
                     <br>
                     <strong>Phase 1:</strong> Alle Fragen können beantwortet werden.
                     Unbeantwortete Fragen werden gespeichert und bei der Auswertung übersprungen.
+                    {% endif %}
                 </p>
             </div>
             <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
         </div>
 
-        <form class="card" method="post" action="{{ url_for('evaluate') }}" id="mainForm">
+        <!-- ⭐ Form Action basierend auf Edit-Modus -->
+        <form class="card" method="post"
+            action="{% if edit_mode %}{{ url_for('update_assessment', assessment_id=assessment_id) }}{% else %}{{ url_for('evaluate') }}{% endif %}"
+            id="mainForm">
 
             <!-- 1) Use-Case Metadaten -->
             <fieldset>
@@ -46,18 +59,19 @@
                     <div>
                         <label for="uc_name">Bezeichnung <span class="req">*</span></label>
                         <input id="uc_name" name="uc_name" type="text" placeholder="z. B. Eingangsrechnungen prüfen"
-                            required />
+                            value="{% if edit_mode and process_data %}{{ process_data.name }}{% endif %}" required />
                     </div>
                     <div>
                         <label for="industry">Branche</label>
                         <input id="industry" name="industry" type="text"
-                            placeholder="z. B. Fertigung, Handel, Dienstleistung" />
+                            placeholder="z. B. Fertigung, Handel, Dienstleistung"
+                            value="{% if edit_mode and process_data %}{{ process_data.industry }}{% endif %}" />
                     </div>
                 </div>
 
                 <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
                 <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten, beteiligte Systeme"
-                    required></textarea>
+                    required>{% if edit_mode and process_data %}{{ process_data.description }}{% endif %}</textarea>
             </fieldset>
 
             <!-- 2) Dimensionen & Fragen -->
@@ -89,6 +103,7 @@
                         <!-- Number Input -->
                         <input type="number" name="q_{{ question.id }}" min="0" step="1"
                             placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}"
+                            value="{% if question.answer is not none %}{{ question.answer }}{% endif %}"
                             style="max-width:300px" />
                         {% if question.unit %}
                         <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
@@ -103,7 +118,8 @@
                                     <span class="likert-label">{{ option.label }}</span>
                                     <input class="likert-input" type="radio" name="q_{{ question.id }}"
                                         value="{{ option.id }}" data-option-code="{{ option.code }}"
-                                        data-is-na="{{ '1' if option.is_na else '0' }}" />
+                                        data-is-na="{{ '1' if option.is_na else '0' }}" {% if question.answer==option.id
+                                        %}checked{% endif %} />
                                     <span class="likert-circle" aria-hidden="true"></span>
                                 </label>
                                 {% endfor %}
@@ -119,7 +135,8 @@
                                     <span class="checkbox-label">{{ option.label }}</span>
                                     <input class="checkbox-input" type="checkbox" name="q_{{ question.id }}[]"
                                         value="{{ option.id }}" data-option-code="{{ option.code }}"
-                                        data-is-na="{{ '1' if option.is_na else '0' }}" />
+                                        data-is-na="{{ '1' if option.is_na else '0' }}" {% if question.answer and
+                                        option.id in question.answer %}checked{% endif %} />
                                     <span class="checkbox-box" aria-hidden="true"></span>
                                 </label>
                                 {% endfor %}
@@ -134,8 +151,13 @@
 
             <!-- 3) Submit Actions -->
             <div class="actions">
+                {% if edit_mode %}
+                <a href="{{ url_for('view_assessment', assessment_id=assessment_id) }}" class="secondary">Abbrechen</a>
+                <button type="submit">Änderungen speichern & neu auswerten</button>
+                {% else %}
                 <button type="reset" class="secondary">Zurücksetzen</button>
                 <button type="submit">Bewertung berechnen</button>
+                {% endif %}
             </div>
         </form>
     </div>
@@ -206,7 +228,11 @@
                     // Nur Use-Case Pflichtfelder müssen ausgefüllt sein
                     // Das HTML5 required-Attribut kümmert sich darum
 
+                    {% if edit_mode %}
+                    console.log('✅ Edit-Modus: Assessment wird aktualisiert');
+                    {% else %}
                     console.log('✅ Phase 1: Form submitted - unbeantwortete Fragen werden als NULL gespeichert');
+                    {% endif %}
 
                     // Optional: Statistik anzeigen
                     const allQuestions = document.querySelectorAll('.question-item');

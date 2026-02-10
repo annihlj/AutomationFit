@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, Response
+from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
 import os
 import csv
 from io import StringIO
@@ -109,6 +109,264 @@ def index():
 
 
 # ============================================
+# ⭐ NEU: Route zum Bearbeiten eines Assessments
+# ============================================
+@app.route('/assessment/<int:assessment_id>/edit')
+def edit_assessment(assessment_id):
+    """Zeigt den Fragebogen mit vorausgefüllten Antworten zum Bearbeiten"""
+    
+    # Hole Assessment
+    assessment = Assessment.query.get_or_404(assessment_id)
+    process = db.session.get(Process, assessment.process_id)
+    qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
+    
+    # Hole alle Dimensionen
+    dimensions = Dimension.query.filter_by(
+        questionnaire_version_id=qv.id
+    ).order_by(Dimension.sort_order).all()
+    
+    # Hole alle Antworten für dieses Assessment
+    existing_answers = Answer.query.filter_by(
+        assessment_id=assessment_id
+    ).all()
+    
+    # Erstelle Lookup-Dictionary für schnellen Zugriff
+    # Key: question_id → Value: Liste von Antworten (für multiple_choice)
+    answers_by_question = {}
+    for answer in existing_answers:
+        if answer.question_id not in answers_by_question:
+            answers_by_question[answer.question_id] = []
+        answers_by_question[answer.question_id].append(answer)
+    
+    # Bereite Daten für Template vor
+    dimensions_data = []
+    
+    for dimension in dimensions:
+        questions = Question.query.filter_by(
+            dimension_id=dimension.id
+        ).order_by(Question.sort_order).all()
+        
+        questions_data = []
+        for question in questions:
+            question_dict = {
+                'id': question.id,
+                'code': question.code,
+                'text': question.text,
+                'type': question.question_type,
+                'unit': question.unit,
+                'options': [],
+                'answer': None  # ⭐ Vorausgefüllter Wert
+            }
+            
+            # Hole existierende Antwort(en) für diese Frage
+            question_answers = answers_by_question.get(question.id, [])
+            
+            # Setze Antwort basierend auf Fragetyp
+            if question.question_type == 'number':
+                if question_answers and question_answers[0].numeric_value is not None:
+                    question_dict['answer'] = question_answers[0].numeric_value
+            
+            elif question.question_type == 'single_choice':
+                if question_answers and question_answers[0].scale_option_id is not None:
+                    question_dict['answer'] = question_answers[0].scale_option_id
+            
+            elif question.question_type == 'multiple_choice':
+                # Liste aller gewählten Option-IDs
+                selected_ids = [a.scale_option_id for a in question_answers if a.scale_option_id is not None]
+                question_dict['answer'] = selected_ids
+            
+            # Hole Optionen für Auswahl-Fragen
+            if question.question_type in ('single_choice', 'multiple_choice') and question.scale:
+                options = ScaleOption.query.filter_by(
+                    scale_id=question.scale_id
+                ).order_by(ScaleOption.sort_order).all()
+                
+                question_dict['options'] = [
+                    {
+                        'id': opt.id,
+                        'code': opt.code,
+                        'label': opt.label,
+                        'is_na': opt.is_na
+                    }
+                    for opt in options
+                ]
+            
+            questions_data.append(question_dict)
+        
+        dimensions_data.append({
+            'id': dimension.id,
+            'code': dimension.code,
+            'name': dimension.name,
+            'questions': questions_data
+        })
+    
+    # ⭐ Übergebe auch Process-Daten für Vorausfüllung
+    process_data = {
+        'name': process.name,
+        'description': process.description,
+        'industry': process.industry or ''
+    }
+    
+    return render_template('index.html', 
+                         questionnaire=qv,
+                         dimensions=dimensions_data,
+                         edit_mode=True,  # ⭐ Flag für Edit-Modus
+                         assessment_id=assessment_id,
+                         process_data=process_data)
+
+
+# ============================================
+# ⭐ NEU: Route zum Aktualisieren eines Assessments
+# ============================================
+@app.route('/assessment/<int:assessment_id>/update', methods=['POST'])
+def update_assessment(assessment_id):
+    """Aktualisiert ein existierendes Assessment mit neuen Antworten"""
+    
+    try:
+        # Hole Assessment
+        assessment = Assessment.query.get_or_404(assessment_id)
+        process = db.session.get(Process, assessment.process_id)
+        qv = db.session.get(QuestionnaireVersion, assessment.questionnaire_version_id)
+        
+        print(f"\n{'='*60}")
+        print(f"UPDATE ASSESSMENT {assessment_id}")
+        print(f"{'='*60}")
+        
+        # 1. Aktualisiere Process-Daten
+        process.name = request.form.get('uc_name', process.name)
+        process.description = request.form.get('uc_desc', process.description)
+        process.industry = request.form.get('industry', process.industry)
+        
+        print(f"📝 Process aktualisiert: {process.name}")
+        
+        # 2. Lösche alte Antworten
+        Answer.query.filter_by(assessment_id=assessment_id).delete()
+        print(f"🗑️  Alte Antworten gelöscht")
+        
+        # 3. Speichere neue Antworten (wie bei /evaluate)
+        all_questions = Question.query.filter_by(
+            questionnaire_version_id=qv.id
+        ).all()
+        
+        answered_count = 0
+        unanswered_count = 0
+        
+        for question in all_questions:
+            field_single = f"q_{question.id}"
+            field_multi = f"q_{question.id}[]"
+            
+            # === SINGLE CHOICE ===
+            if question.question_type == "single_choice":
+                value = request.form.get(field_single)
+                
+                if value:
+                    answer = Answer(
+                        assessment_id=assessment.id,
+                        question_id=question.id,
+                        scale_option_id=int(value),
+                        is_applicable=True
+                    )
+                    answered_count += 1
+                else:
+                    answer = Answer(
+                        assessment_id=assessment.id,
+                        question_id=question.id,
+                        scale_option_id=None,
+                        is_applicable=True
+                    )
+                    unanswered_count += 1
+                
+                db.session.add(answer)
+            
+            # === MULTIPLE CHOICE ===
+            elif question.question_type == "multiple_choice":
+                values = request.form.getlist(field_multi)
+                
+                if values:
+                    for v in values:
+                        answer = Answer(
+                            assessment_id=assessment.id,
+                            question_id=question.id,
+                            scale_option_id=int(v),
+                            is_applicable=True
+                        )
+                        db.session.add(answer)
+                    answered_count += 1
+                else:
+                    answer = Answer(
+                        assessment_id=assessment.id,
+                        question_id=question.id,
+                        scale_option_id=None,
+                        is_applicable=True
+                    )
+                    unanswered_count += 1
+                    db.session.add(answer)
+            
+            # === NUMBER ===
+            elif question.question_type == "number":
+                value = request.form.get(field_single)
+                
+                if value and value.strip():
+                    try:
+                        num = float(value)
+                        answer = Answer(
+                            assessment_id=assessment.id,
+                            question_id=question.id,
+                            numeric_value=num,
+                            is_applicable=True
+                        )
+                        answered_count += 1
+                    except ValueError:
+                        answer = Answer(
+                            assessment_id=assessment.id,
+                            question_id=question.id,
+                            numeric_value=None,
+                            is_applicable=True
+                        )
+                        unanswered_count += 1
+                else:
+                    answer = Answer(
+                        assessment_id=assessment.id,
+                        question_id=question.id,
+                        numeric_value=None,
+                        is_applicable=True
+                    )
+                    unanswered_count += 1
+                
+                db.session.add(answer)
+        
+        db.session.commit()
+        
+        print(f"✅ Neue Antworten gespeichert:")
+        print(f"   - Beantwortet: {answered_count}")
+        print(f"   - Unbeantworten: {unanswered_count}")
+        
+        # 4. Lösche alte Ergebnisse
+        DimensionResult.query.filter_by(assessment_id=assessment_id).delete()
+        TotalResult.query.filter_by(assessment_id=assessment_id).delete()
+        print(f"🗑️  Alte Ergebnisse gelöscht")
+        
+        db.session.commit()
+        
+        # 5. Berechne neue Ergebnisse
+        print("🔄 Starte Scoring-Service...")
+        total_result = ScoringService.calculate_assessment_results(assessment.id)
+        print("✅ Scoring abgeschlossen")
+        
+        print(f"{'='*60}\n")
+        
+        # 6. Redirect zur Ergebnisseite
+        return redirect(url_for('view_assessment', assessment_id=assessment_id))
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"\n❌ FEHLER beim Update: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Fehler beim Aktualisieren: {str(e)}", 500
+
+
+# ============================================
 # Route: Bewertung auswerten - PHASE 1 ROBUST
 # ============================================
 @app.route('/evaluate', methods=['POST'])
@@ -176,7 +434,6 @@ def evaluate():
                     )
                     db.session.add(answer)
                     answered_count += 1
-                    print(f"✅ Q{question.id} ({question.code}): Beantwortet (Option {value})")
                 else:  # Nicht beantwortet
                     answer = Answer(
                         assessment_id=assessment.id,
@@ -186,7 +443,6 @@ def evaluate():
                     )
                     db.session.add(answer)
                     unanswered_count += 1
-                    print(f"⚠️  Q{question.id} ({question.code}): NICHT beantwortet (NULL)")
             
             # === MULTIPLE CHOICE ===
             elif question.question_type == "multiple_choice":
@@ -542,7 +798,8 @@ def view_assessment(assessment_id):
             "industry": process.industry
         },
         "run_id": f"ASS-{assessment.id}",
-        "breakdown": breakdown
+        "breakdown": breakdown,
+        "assessment_id": assessment_id  # ⭐ Für Edit-Button
     }
 
     return render_template("result.html", **result_data)
