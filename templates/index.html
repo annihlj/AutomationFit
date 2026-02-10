@@ -98,27 +98,36 @@
                 <legend style="color:#1e40af; font-weight:600;">
                     🔗 Gemeinsame Unternehmens-Dimensionen
                 </legend>
-                <div style="padding:0.5rem;">
-                    <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                        <input type="checkbox" name="use_shared_dimensions" id="use_shared_dimensions"
-                            style="width:20px; height:20px; cursor:pointer;" />
-                        <span>
-                            <strong>Eingaben für "Plattformverfügbarkeit" und "Organisatorisch" gemeinsam
+                <div style="padding:0.5rem 0.75rem 0.75rem 0.75rem;">
+                    <div style="display:flex; align-items:center; gap:2.2rem; margin-bottom:0.5rem; min-height:32px;">
+                        <label class="toggle-switch" style="flex-shrink:0;">
+                            <input type="checkbox" name="use_shared_dimensions" id="use_shared_dimensions" />
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <div style="margin-left:0.5rem;">
+                            <strong style="font-size:1rem;">Eingaben für "Plattformverfügbarkeit" gemeinsam
                                 speichern</strong>
                             <br>
-                            <small style="color:#6b7280;">
-                                Wenn aktiviert, werden die Antworten dieser beiden Dimensionen übergreifend gespeichert
-                                und bei jedem neuen Assessment automatisch vorausgefüllt.
-                                Diese Option eignet sich für unternehmensweite Einstellungen, die sich selten ändern.
+                            <small style="color:#6b7280; font-size:0.93em;">
+                                Wenn aktiviert, werden die Antworten der <b>Dimension 1 (Plattformverfügbarkeit)</b> und
+                                <b>Dimension 2 (Organisatorisch)</b> übergreifend gespeichert und bei jedem neuen
+                                Assessment automatisch vorausgefüllt. Diese Option eignet sich für unternehmensweite
+                                Einstellungen, die sich selten ändern.
                             </small>
-                        </span>
-                    </label>
+                        </div>
+                    </div>
+                    <button type="button" id="reset-shared-btn" class="btn-secondary"
+                        style="display:none; margin-left:62px; margin-top:0.2rem;">
+                        🗑️ Gemeinsame Eingaben zurücksetzen
+                    </button>
                 </div>
             </fieldset>
 
             <!-- Dimensionen & Fragen -->
             {% for dimension in dimensions %}
-            <fieldset class="dimension" style="margin-top:1.5rem" data-dimension-id="{{ dimension.id }}">
+            <fieldset class="dimension"
+                style="margin-top:0.7rem; padding:0.7rem 0.7rem 0.2rem 0.7rem; background:#fff; border:1px solid #e5e7eb;"
+                data-dimension-id="{{ dimension.id }}">
                 <legend class="dimension-legend">
                     <button type="button" class="dimension-toggle" aria-expanded="false"
                         aria-controls="dimension-panel-{{ dimension.id }}" id="dimension-toggle-{{ dimension.id }}">
@@ -422,6 +431,92 @@
                     panel.hidden = expanded;
                 });
             });
+
+            // === Toggle Switch für Gemeinsame Dimensionen (persistenter State & UI für Dim 1+2) ===
+            const sharedToggle = document.getElementById('use_shared_dimensions');
+            const resetSharedBtn = document.getElementById('reset-shared-btn');
+            // IDs für Dimension 1 und 2 (Plattformverfügbarkeit & Organisatorisch)
+            const sharedDimensionIds = [1, 2];
+
+            // Toggle-Status aus localStorage laden
+            if (sharedToggle) {
+                const saved = localStorage.getItem('use_shared_dimensions');
+                if (saved !== null) sharedToggle.checked = saved === 'true';
+
+                function updateResetButton() {
+                    if (resetSharedBtn) {
+                        resetSharedBtn.style.display = sharedToggle.checked ? 'inline-block' : 'none';
+                    }
+                }
+
+                // UI-Hervorhebung für Dim 1+2
+                function highlightSharedDimensions(active) {
+                    sharedDimensionIds.forEach(id => {
+                        const fieldset = document.querySelector(`[data-dimension-id="${id}"]`);
+                        if (fieldset) {
+                            if (active) {
+                                fieldset.style.boxShadow = '0 0 0 3px #0284c755';
+                                fieldset.style.borderColor = '#0284c7';
+                            } else {
+                                fieldset.style.boxShadow = '';
+                                fieldset.style.borderColor = '';
+                            }
+                        }
+                    });
+                }
+
+                // Initial UI-State
+                updateResetButton();
+                highlightSharedDimensions(sharedToggle.checked);
+
+                sharedToggle.addEventListener('change', function () {
+                    localStorage.setItem('use_shared_dimensions', this.checked);
+                    updateResetButton();
+                    highlightSharedDimensions(this.checked);
+
+                    // Wenn Toggle ausgeschaltet wird, leere Felder in Dim 1+2
+                    if (!this.checked) {
+                        sharedDimensionIds.forEach(id => {
+                            const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
+                            if (dimPanel) {
+                                dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                                    input.value = '';
+                                });
+                                dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                                    input.checked = false;
+                                });
+                                dimPanel.querySelectorAll('select').forEach(select => {
+                                    select.selectedIndex = 0;
+                                });
+                            }
+                        });
+                        updateAllDimensionStatuses();
+                    }
+                });
+
+                // Reset Button Click Handler (für beide Dimensionen)
+                if (resetSharedBtn) {
+                    resetSharedBtn.addEventListener('click', function () {
+                        if (confirm('Möchten Sie wirklich alle gemeinsamen Eingaben zurücksetzen?')) {
+                            sharedDimensionIds.forEach(id => {
+                                const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
+                                if (dimPanel) {
+                                    dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                                        input.value = '';
+                                    });
+                                    dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                                        input.checked = false;
+                                    });
+                                    dimPanel.querySelectorAll('select').forEach(select => {
+                                        select.selectedIndex = 0;
+                                    });
+                                }
+                            });
+                            updateAllDimensionStatuses();
+                        }
+                    });
+                }
+            }
 
             // Initial
             applyAllVisibility();

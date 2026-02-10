@@ -117,7 +117,7 @@ def get_shared_dimension_ids():
     dimensions = Dimension.query.filter_by(
         questionnaire_version_id=qv.id
     ).filter(
-        Dimension.code.in_(['1', '2'])
+        Dimension.code.in_(['1', '7'])
     ).all()
     
     return [d.id for d in dimensions]
@@ -936,7 +936,7 @@ def view_assessment(assessment_id):
                 'code': dimension.code,
                 'name': dimension.name,
                 'calc_method': dimension.calc_method,
-                'is_shared': dimension.code in ['1', '2'],  # Dimensionen 1 & 2 sind gemeinsam
+                'is_shared': dimension.code in ['1', '7'],
                 'rpa_score': None,
                 'ipa_score': None,
                 'rpa_excluded': False,
@@ -1132,27 +1132,50 @@ def view_assessment(assessment_id):
 # ============================================
 @app.route('/assessment/<int:assessment_id>/delete', methods=['POST'])
 def delete_assessment(assessment_id):
-    """Löscht ein Assessment"""
+    """Löscht ein Assessment und alle zugehörigen Daten"""
     
     try:
         assessment = Assessment.query.get_or_404(assessment_id)
         process_id = assessment.process_id
         
-        # Lösche Assessment (cascade löscht Antworten, Ergebnisse)
+        # Lösche explizit alle zugehörigen Daten
+        # (auch wenn CASCADE eingestellt ist, machen wir es explizit für Sicherheit)
+        
+        # 1. Lösche Antworten
+        Answer.query.filter_by(assessment_id=assessment_id).delete()
+        
+        # 2. Lösche Dimensionsergebnisse
+        DimensionResult.query.filter_by(assessment_id=assessment_id).delete()
+        
+        # 3. Lösche Gesamtergebnis
+        TotalResult.query.filter_by(assessment_id=assessment_id).delete()
+        
+        # 4. Lösche Economic Metrics
+        EconomicMetric.query.filter_by(assessment_id=assessment_id).delete()
+        
+        # 5. Lösche Assessment selbst
         db.session.delete(assessment)
         
-        # Lösche Process wenn keine weiteren Assessments
+        # 6. Prüfe ob Process noch weitere Assessments hat
+        db.session.flush()  # Stelle sicher dass das Assessment gelöscht ist
         remaining = Assessment.query.filter_by(process_id=process_id).count()
+        
         if remaining == 0:
+            # Lösche Process wenn keine weiteren Assessments vorhanden
             process = db.session.get(Process, process_id)
             if process:
                 db.session.delete(process)
         
         db.session.commit()
-        return redirect(url_for('comparison'))
+        
+        # Redirect mit Erfolgsmeldung
+        return redirect(url_for('comparison', deleted='true'))
     
     except Exception as e:
         db.session.rollback()
+        print(f"❌ Fehler beim Löschen von Assessment {assessment_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return f"Fehler beim Löschen: {str(e)}", 500
 
 

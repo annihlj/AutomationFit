@@ -6,6 +6,36 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Vergleich – Automation Fit</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+    <style>
+        /* Delete Button Styles */
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #dc2626;
+            cursor: pointer;
+            font-size: 1.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            transition: all 0.2s;
+            line-height: 1;
+        }
+
+        .delete-btn:hover {
+            background-color: #fee2e2;
+            transform: scale(1.1);
+        }
+
+        .delete-btn:active {
+            transform: scale(0.95);
+        }
+
+        .actions-cell {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+    </style>
 </head>
 
 <body>
@@ -34,8 +64,10 @@
             <table class="comparison-table">
                 <thead>
                     <tr>
-                        <th>Prozess</th>
-                        <th>Branche</th>
+                        <th style="max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            Prozess</th>
+                        <th style="max-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            Branche</th>
                         <th>Datum</th>
                         <th>RPA Score</th>
                         <th>IPA Score</th>
@@ -45,12 +77,13 @@
                 </thead>
                 <tbody>
                     {% for assessment in assessments %}
-                    <tr>
-                        <td>
-                            <strong>{{ assessment.process_name }}</strong>
+                    <tr id="assessment-row-{{ assessment.id }}">
+                        <td style="max-width:180px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <strong title="{{ assessment.process_name }}">{{ assessment.process_name }}</strong>
                         </td>
-                        <td>
-                            <span class="muted">{{ assessment.industry or '–' }}</span>
+                        <td style="max-width:120px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <span class="muted" title="{{ assessment.industry or '–' }}">{{ assessment.industry or '–'
+                                }}</span>
                         </td>
                         <td>
                             <span class="muted">{{ assessment.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
@@ -75,17 +108,51 @@
                         </td>
                         <td>
                             {% set rec_class = 'neutral' %}
-                            {% if assessment.recommendation == 'RPA' %}{% set rec_class = 'rpa' %}
-                            {% elif assessment.recommendation == 'IPA' %}{% set rec_class = 'ipa' %}
+                            {% if assessment.rpa_excluded and assessment.ipa_excluded %}
+                            {% set rec_class = 'excluded' %}
+                            {% elif assessment.rpa_excluded %}
+                            {% set rec_class = 'ipa' %}
+                            {% elif assessment.ipa_excluded %}
+                            {% set rec_class = 'rpa' %}
+                            {% elif assessment.total_rpa and assessment.total_ipa %}
+                            {% if assessment.total_ipa > assessment.total_rpa + 0.25 %}
+                            {% set rec_class = 'ipa' %}
+                            {% elif assessment.total_rpa > assessment.total_ipa + 0.25 %}
+                            {% set rec_class = 'rpa' %}
+                            {% endif %}
                             {% endif %}
                             <span class="recommendation-badge {{ rec_class }}">
-                                {{ assessment.recommendation }}
+                                {% if assessment.rpa_excluded and assessment.ipa_excluded %}
+                                Keine Automatisierung
+                                {% elif assessment.rpa_excluded %}
+                                IPA
+                                {% elif assessment.ipa_excluded %}
+                                RPA
+                                {% elif assessment.total_rpa and assessment.total_ipa %}
+                                {% if assessment.total_ipa > assessment.total_rpa + 0.25 %}
+                                IPA
+                                {% elif assessment.total_rpa > assessment.total_ipa + 0.25 %}
+                                RPA
+                                {% else %}
+                                Neutral
+                                {% endif %}
+                                {% else %}
+                                Unvollständig
+                                {% endif %}
                             </span>
                         </td>
                         <td>
-                            <a href="{{ url_for('view_assessment', assessment_id=assessment.id) }}" class="view-link">
-                                Details anzeigen →
-                            </a>
+                            <div class="actions-cell">
+                                <a href="{{ url_for('view_assessment', assessment_id=assessment.id) }}"
+                                    class="view-link" style="margin-right:2.2rem;">
+                                    Details
+                                </a>
+                                <button class="delete-btn"
+                                    onclick="deleteAssessment({{ assessment.id }}, '{{ assessment.process_name }}')"
+                                    title="Assessment löschen">
+                                    ✕
+                                </button>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -118,6 +185,71 @@
         </div>
         {% endif %}
     </div>
+
+    <script>
+        function deleteAssessment(assessmentId, processName) {
+            // Bestätigungsdialog
+            if (!confirm(`Möchten Sie das Assessment "${processName}" wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) {
+                return;
+            }
+
+            // Erstelle ein verstecktes Formular für POST-Request
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/assessment/${assessmentId}/delete`;
+
+            // Füge das Formular zum Body hinzu und sende es
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        // Optional: Zeige eine Erfolgsmeldung wenn von delete zurückgekehrt
+        window.addEventListener('DOMContentLoaded', function () {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('deleted') === 'true') {
+                // Zeige kurze Erfolgsmeldung
+                const message = document.createElement('div');
+                message.style.cssText = 'position:fixed; top:20px; right:20px; background:#10b981; color:white; padding:1rem 1.5rem; border-radius:8px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:1000; animation:slideIn 0.3s ease-out;';
+                message.textContent = '✓ Assessment erfolgreich gelöscht';
+                document.body.appendChild(message);
+
+                // Entferne die Nachricht nach 3 Sekunden
+                setTimeout(() => {
+                    message.style.animation = 'slideOut 0.3s ease-in';
+                    setTimeout(() => message.remove(), 300);
+                }, 3000);
+
+                // Entferne den URL-Parameter
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+        });
+    </script>
+
+    <style>
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+    </style>
 </body>
 
 </html>

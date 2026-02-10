@@ -203,11 +203,11 @@ class ScoringService:
             if q:
                 values[q.code] = a.numeric_value
 
+        # 1.6 separat holen (liegt nicht in Dimension 7)
         q_1_6 = Question.query.filter_by(
-        questionnaire_version_id=assessment.questionnaire_version_id,
-        code="1.6"
+            questionnaire_version_id=assessment.questionnaire_version_id,
+            code="1.6"
         ).first()
-
         if q_1_6:
             a_1_6 = Answer.query.filter_by(
                 assessment_id=assessment_id,
@@ -215,9 +215,6 @@ class ScoringService:
             ).first()
             if a_1_6 and a_1_6.numeric_value is not None:
                 values["1.6"] = a_1_6.numeric_value
-
-        # ✅ Default: wenn 1.6 fehlt oder None ist, nimm 1
-        values["1.6"] = float(values.get("1.6") or 1.0)
 
         required = ["1.6", "7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"]
         missing = [c for c in required if c not in values]

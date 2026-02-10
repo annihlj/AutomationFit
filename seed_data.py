@@ -461,6 +461,13 @@ def seed_data():
         scale_id=scale_likert.id,
         sort_order=2
     )
+    db.session.add(Hint(
+        question_id=q2_2.id,
+        scale_option_id=opt_no.id,
+        automation_type=None,
+        hint_text="Ohne externe Unterstützung ist eine Automatisierung nicht umsetzbar.",
+        hint_type="error"
+    ))
     
     q2_3 = Question(
         questionnaire_version_id=qv.id,
