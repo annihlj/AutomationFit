@@ -7,7 +7,7 @@ from models.database import (
     Question, OptionScore, Dimension, EconomicMetric
 )
 from extensions import db
-
+from collections import defaultdict
 
 class ScoringService:
     """Service zur Berechnung von RPA/IPA-Scores"""
@@ -58,50 +58,95 @@ class ScoringService:
     
     @staticmethod
     def _calculate_dimension_result(assessment_id, dimension, automation_type):
-        """Berechnet das Ergebnis für eine Dimension"""
-        
-        # Hole alle Antworten für diese Dimension
+        """Berechnet das Ergebnis für eine Dimension (inkl. multiple_choice Best-of)"""
+
         questions = Question.query.filter_by(dimension_id=dimension.id).all()
         question_ids = [q.id for q in questions]
-        
+
         answers = Answer.query.filter(
             Answer.assessment_id == assessment_id,
             Answer.question_id.in_(question_ids)
         ).all()
-        
+
+        # Antworten nach question_id gruppieren (wichtig für multiple_choice)
+        answers_by_q = defaultdict(list)
+        for a in answers:
+            answers_by_q[a.question_id].append(a)
+
         scores = []
         is_excluded = False
         excluded_by_question_id = None
-        
-        for answer in answers:
-            question = Question.query.get(answer.question_id)
-            
-            # Nur Single-Choice Fragen haben Scores
-            if question.question_type == "single_choice" and answer.scale_option_id:
-                # Hole den Score für diese Option
+
+        for question in questions:
+            q_answers = answers_by_q.get(question.id, [])
+            if not q_answers:
+                continue
+
+            # -----------------------------
+            # SINGLE CHOICE
+            # -----------------------------
+            if question.question_type == "single_choice":
+                a = q_answers[0]
+                if not a.scale_option_id:
+                    continue
+
                 option_score = OptionScore.query.filter_by(
                     question_id=question.id,
-                    scale_option_id=answer.scale_option_id,
+                    scale_option_id=a.scale_option_id,
                     automation_type=automation_type
                 ).first()
-                
-                if option_score:
-                    # Prüfe auf Ausschluss
-                    if option_score.is_exclusion:
-                        is_excluded = True
-                        excluded_by_question_id = question.id
-                        break
-                    
-                    # Prüfe auf Anwendbarkeit
-                    if option_score.is_applicable and option_score.score is not None:
-                        scores.append(option_score.score)
-        
-        # Berechne Mittelwert
+
+                if not option_score:
+                    continue
+
+                if option_score.is_exclusion:
+                    is_excluded = True
+                    excluded_by_question_id = question.id
+                    break
+
+                if option_score.is_applicable and option_score.score is not None:
+                    scores.append(option_score.score)
+
+            # -----------------------------
+            # MULTIPLE CHOICE (Best-of)
+            # -----------------------------
+            elif question.question_type == "multiple_choice":
+                option_ids = [a.scale_option_id for a in q_answers if a.scale_option_id]
+                if not option_ids:
+                    continue
+
+                option_scores = OptionScore.query.filter(
+                    OptionScore.question_id == question.id,
+                    OptionScore.automation_type == automation_type,
+                    OptionScore.scale_option_id.in_(option_ids)
+                ).all()
+
+                if not option_scores:
+                    continue
+
+                # Ausschluss schlägt alles
+                if any(os.is_exclusion for os in option_scores):
+                    is_excluded = True
+                    excluded_by_question_id = question.id
+                    break
+
+                # nur anwendbare Scores berücksichtigen
+                applicable = [
+                    os.score for os in option_scores
+                    if os.is_applicable and os.score is not None
+                ]
+
+                if applicable:
+                    scores.append(max(applicable))
+
+            # number hat in deinem Modell keine OptionScores -> ignorieren (wie bisher)
+            else:
+                continue
+
         mean_score = None
         if not is_excluded and scores:
             mean_score = sum(scores) / len(scores)
-        
-        # Speichere Ergebnis
+
         dim_result = DimensionResult(
             assessment_id=assessment_id,
             dimension_id=dimension.id,
@@ -111,282 +156,131 @@ class ScoringService:
             excluded_by_question_id=excluded_by_question_id
         )
         db.session.add(dim_result)
-    
     @staticmethod
     def _calculate_economic_dimension(assessment_id, dimension):
-        """
-        Berechnet die wirtschaftliche Dimension (Dimension 7)
-        Basiert auf Excel-Formeln
-        """
-        
-        # Hole alle Antworten für diese Dimension
-        questions = Question.query.filter_by(dimension_id=dimension.id).all()
-        
-        # Hole Antworten
+        """Berechnet Dimension 7 (Wirtschaftlichkeit) + speichert Kennzahlen & Score."""
+
+        assessment = Assessment.query.get(assessment_id)
+        if not assessment:
+            raise ValueError(f"Assessment {assessment_id} nicht gefunden")
+
+        # Antworten aus Dimension 7 laden
+        q7_questions = Question.query.filter_by(dimension_id=dimension.id).all()
+        q7_ids = [q.id for q in q7_questions]
+
         answers = Answer.query.filter(
             Answer.assessment_id == assessment_id,
-            Answer.question_id.in_([q.id for q in questions])
+            Answer.question_id.in_(q7_ids)
         ).all()
-        
-        # Erstelle Mapping: Fragencode -> Wert
-        values = {}
-        for answer in answers:
-            question = Question.query.get(answer.question_id)
-            if answer.numeric_value is not None:
-                values[question.code] = answer.numeric_value
-        
-        # Prüfe ob alle benötigten Werte vorhanden sind
-        required_codes = ["1.6","7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"]
-        if not all(code in values for code in required_codes):
-            # Nicht alle Werte vorhanden - keine Berechnung möglich
-            print(f"⚠️ Wirtschaftlichkeit: Nicht alle Werte vorhanden. Fehlen: {set(required_codes) - set(values.keys())}")
-            return
-        
-        # ========================================
-        # WERTE EXTRAHIEREN
-        # ========================================
-        
-        # C88: Einmalige Kosten
-        anzahl_prozesse = values["1.6"]
 
-        # C88: Einmalige Kosten
-        einmalige_kosten = values["7.1"]
-        
-        # C89: Implementierungsstunden
-        impl_stunden = values["7.2"]
-        
-        # C90: Laufende Kosten pro Jahr
-        laufende_kosten_jahr = values["7.3"]
-        
-        # C91: Wartungsstunden pro Monat
-        wartung_stunden_monat = values["7.4"]
-        
-        # C95: Häufigkeit pro Monat
-        haeufigkeit_monat = values["7.5"]
-        
-        # C94: Bearbeitungszeit in Minuten
-        bearbeitungszeit_min = values["7.6"]
-        
-        # C97: Verbleibende Zeit in Minuten
-        verbleibende_zeit_min = values["7.7"]
-        
-        # Konstanten
-        jahresarbeitsstunden = ScoringService.ANNUAL_WORK_HOURS_PER_FTE  # K96 = 1700
-        kosten_pro_fte = ScoringService.COST_PER_FTE_YEAR  # 55000
-        
-        # ========================================
-        # BERECHNUNGEN (Excel-Formeln)
-        # ========================================
-        
-        # K93 = Häufigkeit pro Jahr
-        haeufigkeit_jahr = haeufigkeit_monat * 12
-        
-        # K93/K96 = Stundensatz-Faktor
-        stundensatz = kosten_pro_fte / jahresarbeitsstunden  # 55000 / 1700 = 32.35 €/h
-        
-        # ========================================
-        # FTE-EINSPARUNG
-        # Excel: =(((K94/60)*K95)/K96)*(1-((K97/60)/(K94/60)))
-        # K94 = C94 (bearbeitungszeit_min)
-        # K95 = K93 (haeufigkeit_jahr)
-        # K96 = 1700
-        # K97 = C97 (verbleibende_zeit_min)
-        # ========================================
-        
-        # Umrechnung in Stunden
-        bearbeitungszeit_h = bearbeitungszeit_min / 60
-        verbleibende_zeit_h = verbleibende_zeit_min / 60
-        
-        # Gesamtzeit aktuell pro Jahr
-        gesamtzeit_aktuell_h = bearbeitungszeit_h * haeufigkeit_jahr
-        
-        # Gesamtzeit nach Automatisierung
-        gesamtzeit_neu_h = verbleibende_zeit_h * haeufigkeit_jahr
-        
-        # Zeitersparnis
-        zeitersparnis_h = gesamtzeit_aktuell_h - gesamtzeit_neu_h
-        
-        # FTE-Einsparung
-        # Original-Formel umgeformt:
-        # = ((bearbeitungszeit_h * haeufigkeit_jahr) / jahresarbeitsstunden) * (1 - (verbleibende_zeit_h / bearbeitungszeit_h))
-        # = (gesamtzeit_aktuell_h / jahresarbeitsstunden) * (1 - (verbleibende_zeit_h / bearbeitungszeit_h))
-        # = zeitersparnis_h / jahresarbeitsstunden
-        
+        values = {}
+        for a in answers:
+            if a.numeric_value is None:
+                continue
+            q = Question.query.get(a.question_id)
+            if q:
+                values[q.code] = a.numeric_value
+
+        # 1.6 separat holen (liegt nicht in Dimension 7)
+        q_1_6 = Question.query.filter_by(
+            questionnaire_version_id=assessment.questionnaire_version_id,
+            code="1.6"
+        ).first()
+        if q_1_6:
+            a_1_6 = Answer.query.filter_by(
+                assessment_id=assessment_id,
+                question_id=q_1_6.id
+            ).first()
+            if a_1_6 and a_1_6.numeric_value is not None:
+                values["1.6"] = a_1_6.numeric_value
+
+        required = ["1.6", "7.1", "7.2", "7.3", "7.4", "7.5", "7.6", "7.7"]
+        missing = [c for c in required if c not in values]
+        if missing:
+            print(f"⚠️ Wirtschaftlichkeit: Werte fehlen: {missing}")
+            return
+
+        # Inputs
+        anzahl_prozesse = max(float(values["1.6"]), 1.0)  # Schutz vor Division durch 0
+        einmalige_kosten = float(values["7.1"])
+        impl_stunden = float(values["7.2"])
+        laufende_kosten_jahr = float(values["7.3"])
+        wartung_stunden_monat = float(values["7.4"])
+        haeufigkeit_monat = float(values["7.5"])
+        bearbeitungszeit_min = float(values["7.6"])
+        verbleibende_zeit_min = float(values["7.7"])
+
+        jahresarbeitsstunden = float(ScoringService.ANNUAL_WORK_HOURS_PER_FTE)
+        kosten_pro_fte = float(ScoringService.COST_PER_FTE_YEAR)
+
+        # Baselines
+        haeufigkeit_jahr = haeufigkeit_monat * 12.0
+        stundensatz = kosten_pro_fte / jahresarbeitsstunden  # €/h
+
+        # Zeit / FTE
+        bearb_h = bearbeitungszeit_min / 60.0
+        verbleib_h = verbleibende_zeit_min / 60.0
+
+        gesamt_aktuell_h = bearb_h * haeufigkeit_jahr
+        gesamt_neu_h = verbleib_h * haeufigkeit_jahr
+        zeitersparnis_h = max(gesamt_aktuell_h - gesamt_neu_h, 0.0)
+
         fte_einsparung = zeitersparnis_h / jahresarbeitsstunden
-        
-        # ========================================
-        # PERSONELLER NUTZEN
-        # Excel: =K90*K93
-        # K90 = Zeitersparnis in Minuten pro Monat (oder ähnlich)
-        # K93 = haeufigkeit_jahr
-        # 
-        # Interpretation: Personeller Nutzen = FTE-Einsparung * Kosten pro FTE
-        # ========================================
-        
-        personeller_nutzen_euro = fte_einsparung * kosten_pro_fte
-        
-        # ========================================
-        # INITIALE FIXKOSTEN
-        # Excel: =(C88/C16)+(C89*(K93/K96))
-        # C88 = einmalige_kosten
-        # C16 = unklar (vermutlich 1 oder Anzahl Prozesse)
-        # C89 = impl_stunden
-        # K93 = haeufigkeit_jahr
-        # K96 = jahresarbeitsstunden
-        # 
-        # Interpretation: C16 ist vermutlich 1 (keine Aufteilung)
-        # Formel vereinfacht zu: einmalige_kosten + (impl_stunden * stundensatz)
-        # ========================================
-        
-        # Initiale Fixkosten
+        personeller_nutzen = fte_einsparung * kosten_pro_fte
+
+        # Kosten
         initiale_fixkosten = (einmalige_kosten / anzahl_prozesse) + (impl_stunden * stundensatz)
-        
-        # ========================================
-        # VARIABLE KOSTEN PRO JAHR
-        # Excel: =(C90)+((C91*12)*(K93/K96))
-        # C90 = laufende_kosten_jahr
-        # C91 = wartung_stunden_monat
-        # K93 = haeufigkeit_jahr
-        # K96 = jahresarbeitsstunden
-        # 
-        # Interpretation: 
-        # Variable Kosten = laufende_kosten_jahr + (wartung_stunden_jahr * stundensatz)
-        # ========================================
-        
-        wartung_stunden_jahr = wartung_stunden_monat * 12
-        
+        wartung_stunden_jahr = wartung_stunden_monat * 12.0
         variable_kosten_jahr = laufende_kosten_jahr + (wartung_stunden_jahr * stundensatz)
-        
-        # ========================================
-        # ROI (Return on Investment)
-        # Excel: =((K89)-(K91+K92))/(K91+K92)
-        # K89 = personeller_nutzen_euro
-        # K91 = initiale_fixkosten
-        # K92 = variable_kosten_jahr
-        # 
-        # ROI = (Nutzen - Kosten) / Kosten
-        # ========================================
-        
+
         gesamtkosten = initiale_fixkosten + variable_kosten_jahr
-        
-        if gesamtkosten > 0:
-            roi = (personeller_nutzen_euro - gesamtkosten) / gesamtkosten
-        else:
-            roi = 0
-        
-        # ========================================
-        # SPEICHERE METRIKEN
-        # ========================================
-        
+        roi = (personeller_nutzen - gesamtkosten) / gesamtkosten if gesamtkosten > 0 else 0.0
+
+        # Kennzahlen speichern
         metrics = [
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,  # Gilt für beide
-                key="roi",
-                value=roi,
-                unit="%"
-            ),
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="personeller_nutzen",
-                value=personeller_nutzen_euro,
-                unit="€"
-            ),
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="fte_einsparung",
-                value=fte_einsparung,
-                unit="FTE"
-            ),
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="initiale_fixkosten",
-                value=initiale_fixkosten,
-                unit="€"
-            ),
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="variable_kosten_jahr",
-                value=variable_kosten_jahr,
-                unit="€"
-            ),
-            # Zusätzliche Debug-Metriken
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="haeufigkeit_jahr",
-                value=haeufigkeit_jahr,
-                unit="Anzahl"
-            ),
-            EconomicMetric(
-                assessment_id=assessment_id,
-                automation_type=None,
-                key="zeitersparnis_h_jahr",
-                value=zeitersparnis_h,
-                unit="Stunden"
-            ),
+            ("roi", roi, "%"),
+            ("personeller_nutzen", personeller_nutzen, "€"),
+            ("fte_einsparung", fte_einsparung, "FTE"),
+            ("initiale_fixkosten", initiale_fixkosten, "€"),
+            ("variable_kosten_jahr", variable_kosten_jahr, "€"),
+            ("haeufigkeit_jahr", haeufigkeit_jahr, "Anzahl"),
+            ("zeitersparnis_h_jahr", zeitersparnis_h, "Stunden"),
         ]
-        
-        for metric in metrics:
-            db.session.add(metric)
-        
-        print(f"✅ Wirtschaftlichkeit berechnet:")
-        print(f"   - Häufigkeit/Jahr: {haeufigkeit_jahr}")
-        print(f"   - FTE-Einsparung: {fte_einsparung:.2f}")
-        print(f"   - Personeller Nutzen: {personeller_nutzen_euro:.2f} €")
-        print(f"   - Initiale Fixkosten: {initiale_fixkosten:.2f} €")
-        print(f"   - Variable Kosten/Jahr: {variable_kosten_jahr:.2f} €")
-        print(f"   - ROI: {roi:.2%}")
-        
-        # ========================================
-        # KONVERTIERE ROI ZU SCORE (1-5)
-        # ========================================
-        
-        # Score-Logik:
-        # ROI < 0%     -> Ausschluss
-        # ROI 0-5%     -> Score 1
-        # ROI 5-20%    -> Score 2
-        # ROI 20-50%   -> Score 3
-        # ROI 50-100%  -> Score 4
-        # ROI > 100%   -> Score 5
-        
+        for key, val, unit in metrics:
+            db.session.add(EconomicMetric(
+                assessment_id=assessment_id,
+                automation_type=None,
+                key=key,
+                value=val,
+                unit=unit
+            ))
+
+        # ROI -> Score
         if roi < 0:
-            # Negativer ROI = Ausschluss
-            economic_score = None
-            is_excluded = True
+            economic_score, is_excluded = None, True
         elif roi < 0.05:
-            economic_score = 1.0
-            is_excluded = False
+            economic_score, is_excluded = 1.0, False
         elif roi < 0.20:
-            economic_score = 2.0
-            is_excluded = False
+            economic_score, is_excluded = 2.0, False
         elif roi < 0.50:
-            economic_score = 3.0
-            is_excluded = False
+            economic_score, is_excluded = 3.0, False
         elif roi < 1.0:
-            economic_score = 4.0
-            is_excluded = False
+            economic_score, is_excluded = 4.0, False
         else:
-            economic_score = 5.0
-            is_excluded = False
-        
-        # Speichere Dimension-Ergebnis für beide Automation-Types
-        # (Wirtschaftlichkeit ist unabhängig von RPA/IPA)
-        for automation_type in ["RPA", "IPA"]:
-            dim_result = DimensionResult(
+            economic_score, is_excluded = 5.0, False
+
+        # DimensionResult für RPA & IPA (gleich)
+        for auto in ["RPA", "IPA"]:
+            db.session.add(DimensionResult(
                 assessment_id=assessment_id,
                 dimension_id=dimension.id,
-                automation_type=automation_type,
+                automation_type=auto,
                 mean_score=economic_score,
                 is_excluded=is_excluded,
                 excluded_by_question_id=None
-            )
-            db.session.add(dim_result)
-    
+            ))
+
+        print(f"✅ Wirtschaftlichkeit: ROI={roi:.2%}, Score={economic_score}, Excluded={is_excluded}")
     @staticmethod
     def _calculate_total_result(assessment_id):
         """Berechnet das Gesamt-Ergebnis"""

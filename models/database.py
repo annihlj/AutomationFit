@@ -1,5 +1,7 @@
 """
-Datenbankmodelle für RPA/IPA-Bewertungssystem
+Datenbankmodelle für RPA/IPA-Bewertungssystem - Phase 1 Update
+Änderungen:
+- Answer.is_applicable hinzugefügt für Phase 3 Vorbereitung
 """
 from datetime import datetime
 from extensions import db
@@ -70,11 +72,11 @@ class Question(db.Model):
     scale_id = db.Column(db.Integer, db.ForeignKey("scale.id"), nullable=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
     
-    # Neue Felder für Filterlogik
+    # Felder für Filterlogik (Phase 3)
     is_filter_question = db.Column(db.Boolean, default=False)
     depends_on_question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=True)
     depends_on_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
-    filter_description = db.Column(db.Text, nullable=True)  # Beschreibung der Filterlogik
+    filter_description = db.Column(db.Text, nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint("questionnaire_version_id", "code", name="uq_question_code"),
@@ -135,15 +137,29 @@ class Assessment(db.Model):
 
 
 class Answer(db.Model):
+    """
+    Antworten auf Fragen - Phase 1 Update
+    
+    WICHTIG:
+    - is_applicable wird in Phase 1 immer auf TRUE gesetzt
+    - In Phase 3 wird is_applicable basierend auf Filterlogik gesetzt
+    - NULL-Werte in scale_option_id/numeric_value = unbeantwortete Frage
+    """
     __tablename__ = "answer"
     id = db.Column(db.Integer, primary_key=True)
     assessment_id = db.Column(db.Integer, db.ForeignKey("assessment.id"), nullable=False)
     question_id = db.Column(db.Integer, db.ForeignKey("question.id"), nullable=False)
     scale_option_id = db.Column(db.Integer, db.ForeignKey("scale_option.id"), nullable=True)
     numeric_value = db.Column(db.Float, nullable=True)
+    
+    # NEU: Für Phase 3 - Markierung ob Frage anwendbar war
+    # Phase 1: Immer TRUE (alle Fragen sind anwendbar)
+    # Phase 3: FALSE wenn Frage durch Filter ausgeblendet wurde
+    is_applicable = db.Column(db.Boolean, default=True, nullable=False)
 
     __table_args__ = (
-        db.UniqueConstraint("assessment_id", "question_id", name="uq_answer_once"),
+        # WICHTIG: Constraint angepasst - is_applicable ist jetzt Teil des Unique Keys
+        db.UniqueConstraint("assessment_id", "question_id", name="uq_answer_assessment_question"),
     )
 
     # Relationships

@@ -494,8 +494,8 @@ def seed_data():
         dimension_id=dim3.id,
         code="3.1",
         text="Der aktuelle Prozess ist verstanden und dokumentiert.",
-        question_type="multiple_choice",
-        scale_id=scale_strategy.id,
+        question_type="single_choice",
+        scale_id=scale_likert.id,
         sort_order=1
     )
     
@@ -704,7 +704,7 @@ def seed_data():
         dimension_id=dim6.id,
         code="6.1",
         text="Der operative Betrieb kann auch bei einem Ausfall des automatisierten Prozesses stabil weiterlaufen.",
-        question_type="multiple_choice",
+        question_type="single_choice",
         scale_id=scale_likert.id,
         sort_order=1
     )

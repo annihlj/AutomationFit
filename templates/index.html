@@ -27,13 +27,17 @@
         <div class="topbar">
             <div>
                 <h1>Entscheidungsunterstützung: RPA vs. IPA</h1>
-                <p class="lead">Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
-                    Pflichtfelder sind mit <span class="req">*</span> gekennzeichnet.</p>
+                <p class="lead">
+                    Bitte erfassen Sie den Anwendungsfall und beantworten Sie die Fragen.
+                    <br>
+                    <strong>Phase 1:</strong> Alle Fragen können beantwortet werden.
+                    Unbeantwortete Fragen werden gespeichert und bei der Auswertung übersprungen.
+                </p>
             </div>
             <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
         </div>
 
-        <form class="card" method="post" action="{{ url_for('evaluate') }}">
+        <form class="card" method="post" action="{{ url_for('evaluate') }}" id="mainForm">
 
             <!-- 1) Use-Case Metadaten -->
             <fieldset>
@@ -56,6 +60,7 @@
                     required></textarea>
             </fieldset>
 
+            <!-- 2) Dimensionen & Fragen -->
             {% for dimension in dimensions %}
             <fieldset class="dimension" style="margin-top:1.5rem">
                 <legend class="dimension-legend">
@@ -68,15 +73,20 @@
 
                 <div class="dimension-panel" id="dimension-panel-{{ dimension.id }}" role="region"
                     aria-labelledby="dimension-toggle-{{ dimension.id }}">
+
                     {% for question in dimension.questions %}
                     <div class="question-item" data-question-id="{{ question.id }}"
                         style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem">
+
                         <label style="font-weight:600; display:block; margin-bottom:0.5rem">
                             {{ question.code }} - {{ question.text }}
-                            <span class="req">*</span>
+                            <span style="color:#6b7280; font-weight:normal; font-size:0.9em">
+                                (Optional - kann übersprungen werden)
+                            </span>
                         </label>
 
                         {% if question.type == 'number' %}
+                        <!-- Number Input -->
                         <input type="number" name="q_{{ question.id }}" min="0" step="1"
                             placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}"
                             style="max-width:300px" />
@@ -85,14 +95,32 @@
                         {% endif %}
 
                         {% elif question.type == 'single_choice' %}
+                        <!-- Single Choice (Radio Buttons) -->
                         <div class="likert" role="radiogroup" aria-label="{{ question.code }}">
                             <div class="likert-row likert-{{ question.options|length }}">
                                 {% for option in question.options %}
                                 <label class="likert-item {% if option.is_na %}is-na{% endif %}">
                                     <span class="likert-label">{{ option.label }}</span>
                                     <input class="likert-input" type="radio" name="q_{{ question.id }}"
-                                        value="{{ option.id }}" />
+                                        value="{{ option.id }}" data-option-code="{{ option.code }}"
+                                        data-is-na="{{ '1' if option.is_na else '0' }}" />
                                     <span class="likert-circle" aria-hidden="true"></span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        {% elif question.type == 'multiple_choice' %}
+                        <!-- Multiple Choice (Checkboxes) -->
+                        <div class="checkbox-group" role="group" aria-label="{{ question.code }}">
+                            <div class="checkbox-row checkbox-{{ question.options|length }}">
+                                {% for option in question.options %}
+                                <label class="checkbox-item {% if option.is_na %}is-na{% endif %}">
+                                    <span class="checkbox-label">{{ option.label }}</span>
+                                    <input class="checkbox-input" type="checkbox" name="q_{{ question.id }}[]"
+                                        value="{{ option.id }}" data-option-code="{{ option.code }}"
+                                        data-is-na="{{ '1' if option.is_na else '0' }}" />
+                                    <span class="checkbox-box" aria-hidden="true"></span>
                                 </label>
                                 {% endfor %}
                             </div>
@@ -104,25 +132,27 @@
             </fieldset>
             {% endfor %}
 
+            <!-- 3) Submit Actions -->
             <div class="actions">
                 <button type="reset" class="secondary">Zurücksetzen</button>
                 <button type="submit">Bewertung berechnen</button>
             </div>
         </form>
     </div>
+
     <script>
         document.addEventListener("DOMContentLoaded", () => {
+            // ===== Dimension Toggle Logic =====
             const toggles = document.querySelectorAll(".dimension-toggle");
 
             toggles.forEach((btn) => {
                 const panelId = btn.getAttribute("aria-controls");
                 const panel = document.getElementById(panelId);
 
-                // initial: collapsed if aria-expanded is not true
+                // Initial: collapsed
                 const isExpanded = btn.getAttribute("aria-expanded") === "true";
                 panel.hidden = !isExpanded;
 
-                // set chevron direction according to state
                 const chevron = btn.querySelector('.dimension-chevron');
                 if (chevron) chevron.textContent = isExpanded ? '▾' : '▸';
 
@@ -132,55 +162,70 @@
                     panel.hidden = expanded;
                     if (chevron) chevron.textContent = expanded ? '▸' : '▾';
                 });
+            });
 
-                // Validation: require all questions in a dimension if any question in that dimension was answered
-                const form = document.querySelector('form');
-                if (form) {
-                    form.addEventListener('submit', (e) => {
-                        // clear previous errors
-                        document.querySelectorAll('.question-item.error').forEach(el => el.classList.remove('error'));
-                        document.querySelectorAll('.field-error').forEach(el => el.remove());
+            // ===== Multiple-Choice Exclusive Logic =====
+            // "Keine Angabe" (is_na) und "Keine der genannten" (code=NONE) sind exklusiv
+            document.querySelectorAll('.question-item').forEach(qItem => {
+                const qid = qItem.dataset.questionId;
+                if (!qid) return;
 
-                        let firstError = null;
-                        const dimensions = document.querySelectorAll('.dimension');
-                        dimensions.forEach(dim => {
-                            const questionItems = dim.querySelectorAll('.question-item');
-                            let anyAnswered = false;
+                const checkboxes = qItem.querySelectorAll(`input[type="checkbox"][name="q_${qid}[]"]`);
+                if (!checkboxes.length) return;
 
-                            questionItems.forEach(q => {
-                                const qid = q.dataset.questionId;
-                                const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
-                                const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
-                                if ((numberInput && numberInput.value.trim() !== '') || radioChecked) {
-                                    anyAnswered = true;
-                                }
-                            });
+                const isSpecial = (cb) => {
+                    return cb.dataset.isNa === "1" || cb.dataset.optionCode === "NONE";
+                };
 
-                            if (anyAnswered) {
-                                questionItems.forEach(q => {
-                                    const qid = q.dataset.questionId;
-                                    const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
-                                    const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
-                                    const answered = (numberInput && numberInput.value.trim() !== '') || radioChecked;
-                                    if (!answered) {
-                                        q.classList.add('error');
-                                        const msg = document.createElement('div');
-                                        msg.className = 'field-error';
-                                        msg.textContent = 'Bitte beantworten.';
-                                        q.appendChild(msg);
-                                        if (!firstError) firstError = q;
-                                    }
-                                });
-                            }
-                        });
+                const specialBoxes = Array.from(checkboxes).filter(isSpecial);
+                const normalBoxes = Array.from(checkboxes).filter(cb => !isSpecial(cb));
 
-                        if (firstError) {
-                            e.preventDefault();
-                            firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                checkboxes.forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        // Wenn Special (NA oder NONE) angehakt → alle normalen abwählen
+                        if (isSpecial(cb) && cb.checked) {
+                            normalBoxes.forEach(n => n.checked = false);
+                            // Andere Specials ebenfalls abwählen
+                            specialBoxes.forEach(s => { if (s !== cb) s.checked = false; });
+                        }
+
+                        // Wenn normal angehakt → Specials abwählen
+                        if (!isSpecial(cb) && cb.checked) {
+                            specialBoxes.forEach(s => s.checked = false);
                         }
                     });
-                }
+                });
             });
+
+            // ===== PHASE 1: KEINE strikte Validierung =====
+            // In Phase 1 können Fragen übersprungen werden
+            // Das Submit wird NICHT blockiert
+            const form = document.getElementById('mainForm');
+            if (form) {
+                form.addEventListener('submit', (e) => {
+                    // Nur Use-Case Pflichtfelder müssen ausgefüllt sein
+                    // Das HTML5 required-Attribut kümmert sich darum
+
+                    console.log('✅ Phase 1: Form submitted - unbeantwortete Fragen werden als NULL gespeichert');
+
+                    // Optional: Statistik anzeigen
+                    const allQuestions = document.querySelectorAll('.question-item');
+                    let answeredCount = 0;
+
+                    allQuestions.forEach(q => {
+                        const qid = q.dataset.questionId;
+                        const numberInput = q.querySelector(`input[type="number"][name="q_${qid}"]`);
+                        const radioChecked = form.querySelector(`input[name="q_${qid}"]:checked`);
+                        const checkboxChecked = form.querySelectorAll(`input[name="q_${qid}[]"]:checked`).length > 0;
+
+                        if ((numberInput && numberInput.value.trim() !== '') || radioChecked || checkboxChecked) {
+                            answeredCount++;
+                        }
+                    });
+
+                    console.log(`📊 ${answeredCount} von ${allQuestions.length} Fragen beantwortet`);
+                });
+            }
         });
     </script>
 </body>

@@ -916,6 +916,86 @@ td.small {
     color: #f59e0b;
 }
 
+/* =========================================================
+   Checkbox Group (horizontal, similar to Likert)
+   ========================================================= */
+
+.checkbox-group {
+    margin-top: .75rem;
+    padding: 0;
+    border: 0;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 1.25rem;
+    position: relative;
+    padding: .25rem .25rem 0;
+    flex-wrap: wrap;
+}
+
+.checkbox-item {
+    flex: 1 1 auto;
+    min-width: 120px;
+    display: grid;
+    grid-template-rows: 1fr auto;
+    justify-items: center;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding: 0 .25rem;
+}
+
+.checkbox-label {
+    align-self: end;
+    width: 100%;
+    color: var(--muted);
+    font-size: .82rem;
+    line-height: 1.15rem;
+    margin-bottom: .6rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    hyphens: auto;
+}
+
+.checkbox-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+}
+
+.checkbox-box {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: 2px solid #94a3b8;
+    background: transparent;
+    transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background-color 120ms ease;
+}
+
+.checkbox-item:hover .checkbox-box {
+    transform: scale(1.06);
+}
+
+.checkbox-input:focus-visible+.checkbox-box {
+    outline: 3px solid rgba(56, 189, 248, .45);
+    outline-offset: 4px;
+}
+
+.checkbox-input:checked+.checkbox-box {
+    border-color: currentColor;
+    background-color: currentColor;
+    box-shadow: inset 0 0 0 2px white;
+}
+
+.checkbox-item.is-na {
+    color: var(--muted) !important;
+}
+
 /* gelb */
 .likert-row.likert-5 .likert-item:nth-child(4) {
     color: #84cc16;
