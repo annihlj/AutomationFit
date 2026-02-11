@@ -461,13 +461,6 @@ def seed_data():
         scale_id=scale_likert.id,
         sort_order=2
     )
-    db.session.add(Hint(
-        question_id=q2_2.id,
-        scale_option_id=opt_no.id,
-        automation_type=None,
-        hint_text="Ohne externe Unterstützung ist eine Automatisierung nicht umsetzbar.",
-        hint_type="error"
-    ))
     
     q2_3 = Question(
         questionnaire_version_id=qv.id,
@@ -1871,7 +1864,142 @@ def seed_data():
             is_applicable=False  # "-"
         ),
     ])
+    # ========================================
+    # Option Scores (RPA) für Dimension 5 – Fragen 5.1 bis 5.5
+    # gemäß deiner Tabelle (A = Ausschluss, "-" = nicht anwendbar)
+    # ========================================
 
+    def add_rpa_scores_generics(question, option_value_pairs, na_option=None):
+        """
+        option_value_pairs: Liste von Tupeln (ScaleOption, value)
+        - value = Zahl  -> score=value, applicable=True
+        - value = "A"   -> score=None, is_exclusion=True, applicable=True
+        - value = None  -> score=None, applicable=False   (für "-")
+        na_option: optional ScaleOption für k.A. (wird als "-" gesetzt)
+        """
+        for opt, val in option_value_pairs:
+            if val == "A":
+                db.session.add(OptionScore(
+                    question_id=question.id,
+                    scale_option_id=opt.id,
+                    automation_type="RPA",
+                    score=None,
+                    is_exclusion=True,
+                    is_applicable=True
+                ))
+            elif val is None:
+                db.session.add(OptionScore(
+                    question_id=question.id,
+                    scale_option_id=opt.id,
+                    automation_type="RPA",
+                    score=None,
+                    is_exclusion=False,
+                    is_applicable=False
+                ))
+            else:
+                db.session.add(OptionScore(
+                    question_id=question.id,
+                    scale_option_id=opt.id,
+                    automation_type="RPA",
+                    score=float(val),
+                    is_exclusion=False,
+                    is_applicable=True
+                ))
+
+        # k.A. immer "-" (nicht anwendbar), falls Option existiert
+        if na_option is not None:
+            db.session.add(OptionScore(
+                question_id=question.id,
+                scale_option_id=na_option.id,
+                automation_type="RPA",
+                score=None,
+                is_exclusion=False,
+                is_applicable=False
+            ))
+
+
+    # --- 5.1 (Likert 1–5 + k.A.) ---
+    # Werte: 1, 1, 3, 4, 5, "-"
+    # (d.h. Option 2 bekommt score=1)
+    add_rpa_scores_generics(
+        q5_1,
+        [(opt_a1, 1), (opt_a2, 1), (opt_a3, 3), (opt_a4, 4), (opt_a5, 5)],
+        na_option=opt_a_na
+    )
+
+    # --- 5.2 (Likert 1–5 + k.A.) ---
+    # Werte: 1, 1, 3, 4, 5, "-"
+    add_rpa_scores_generics(
+        q5_2,
+        [(opt_a1, 1), (opt_a2, 1), (opt_a3, 3), (opt_a4, 4), (opt_a5, 5)],
+        na_option=opt_a_na
+    )
+
+    # --- 5.3 (Ja/Nein + k.A.) ---
+    # Ja = 5, Nein = A, k.A. = "-"
+    db.session.add_all([
+        OptionScore(
+            question_id=q5_3.id,
+            scale_option_id=opt_yes.id,
+            automation_type="RPA",
+            score=5.0,
+            is_exclusion=False,
+            is_applicable=True
+        ),
+        OptionScore(
+            question_id=q5_3.id,
+            scale_option_id=opt_no.id,
+            automation_type="RPA",
+            score=None,
+            is_exclusion=True,   # A
+            is_applicable=True
+        ),
+        OptionScore(
+            question_id=q5_3.id,
+            scale_option_id=opt_na.id,
+            automation_type="RPA",
+            score=None,
+            is_exclusion=False,
+            is_applicable=False  # "-"
+        ),
+    ])
+
+    # --- 5.4 (Likert 1–5 + k.A.) ---
+    # Werte: 1, 1, 3, 4, 5, "-"
+    add_rpa_scores_generics(
+        q5_4,
+        [(opt_a1, 1), (opt_a2, 1), (opt_a3, 3), (opt_a4, 4), (opt_a5, 5)],
+        na_option=opt_a_na
+    )
+
+    # --- 5.5 (Ja/Nein + k.A.) ---
+    # Ja = 5, Nein = 1, k.A. = "-"
+    db.session.add_all([
+        OptionScore(
+            question_id=q5_5.id,
+            scale_option_id=opt_yes.id,
+            automation_type="RPA",
+            score=5.0,
+            is_exclusion=False,
+            is_applicable=True
+        ),
+        OptionScore(
+            question_id=q5_5.id,
+            scale_option_id=opt_no.id,
+            automation_type="RPA",
+            score=1.0,
+            is_exclusion=False,
+            is_applicable=True
+        ),
+        OptionScore(
+            question_id=q5_5.id,
+            scale_option_id=opt_na.id,
+            automation_type="RPA",
+            score=None,
+            is_exclusion=False,
+            is_applicable=False  # "-"
+        ),
+    ])
         # ========================================
     # Option Scores (nur IPA) für Dimension 5 – Fragen 5.1 bis 5.5
     # gemäß deiner Tabelle (A = Ausschluss, "-" = nicht anwendbar)
