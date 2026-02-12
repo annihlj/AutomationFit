@@ -1,3 +1,55 @@
+/* Info-Hover-Icon und Block */
+.info-hover-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.info-icon {
+    display: inline-block;
+    width: 1.1em;
+    height: 1.1em;
+    border-radius: 50%;
+    background: #e0e7ef;
+    color: #2563eb;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.95em;
+    line-height: 1.1em;
+    vertical-align: middle;
+    transition: background 0.2s, color 0.2s;
+}
+
+.info-hover-wrapper:hover .info-icon {
+    background: #cfe2fa;
+    color: #0284c7;
+}
+
+.info-hover-block {
+    display: none;
+    position: absolute;
+    left: 110%;
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 420px;
+    max-width: 700px;
+    background: #f8fafc;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(56, 189, 248, 0.18);
+    padding: 0.75em 1em;
+    font-size: 1em;
+    z-index: 9999;
+    white-space: normal;
+    word-break: break-word;
+    overflow: auto;
+    max-height: 350px;
+}
+
+.info-hover-wrapper:hover .info-hover-block {
+    display: block;
+}
+
 .score-bar {
     width: 100%;
     height: 18px;
@@ -73,6 +125,8 @@ body {
     color: var(--text);
     font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Ubuntu, "Helvetica Neue", Arial, sans-serif;
     line-height: 1.5;
+    /* Scrollbar immer anzeigen, um Layout-Sprung zu verhindern */
+    overflow-y: scroll;
 }
 
 .container {
@@ -577,7 +631,7 @@ td.small {
 }
 
 .dimension-content.expanded {
-    max-height: 1000px;
+    max-height: 9999px;
     border-top: 1px solid var(--line);
 }
 
@@ -1334,6 +1388,23 @@ input:checked+.toggle-slider:before {
     .kpi-grid {
         grid-template-columns: 1fr 1fr 1fr;
     }
+}
+
+/* Plattform-Status Styling */
+.platform-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    padding: 0.45rem 0.75rem;
+    font-weight: 700;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+}
+
+.platform-status-pill:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 /* KPI Card Inhalt konsistent */

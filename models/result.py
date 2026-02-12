@@ -37,7 +37,6 @@ class Evaluation(db.Model):
     use_case_id = db.Column(db.Integer, db.ForeignKey('use_case.id'), nullable=False)
     criterion_id = db.Column(db.Integer, db.ForeignKey('criterion.id'), nullable=False)
     score = db.Column(db.Float, nullable=False)
-
     criterion = db.relationship('Criterion')
 
     class Result(db.Model):

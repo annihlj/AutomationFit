@@ -21,10 +21,41 @@ from models.database import (
 from services.scoring_service import ScoringService
 from seed_data import seed_data
 
+
 # ============================================
 # App-Konfiguration
 # ============================================
 app = Flask(__name__)
+
+# Jinja2-Filter für Frage-Trennung
+import re
+def question_regex(text):
+    info_patterns = [
+        'Trifft voll zu:', 'Trifft gar nicht zu:', 'Ja:', 'Nein:', 'Achtung:'
+    ]
+    info_start = None
+    for pat in info_patterns:
+        idx = text.find(pat)
+        if idx != -1:
+            info_start = idx
+            break
+    if info_start is not None:
+        main = text[:info_start].strip()
+        # Entferne einzelne öffnende oder schließende Klammer am Ende des Hauptsatzes
+        if main.endswith('('):
+            main = main[:-1].strip()
+        if main.endswith(')'):
+            main = main[:-1].strip()
+        info = text[info_start:].strip()
+        # Klammern am Anfang und/oder Ende entfernen
+        if info.startswith('('):
+            info = info[1:].strip()
+        if info.endswith(')'):
+            info = info[:-1].strip()
+        return {'main': main, 'info': info}
+    else:
+        return {'main': text, 'info': ''}
+app.jinja_env.filters['question_regex'] = question_regex
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 db_path = os.path.join(BASE_DIR, 'data', 'decision_support.db')
@@ -183,7 +214,98 @@ def save_shared_dimension_answers(dimension_id, answers_data):
                 )
                 db.session.add(shared_answer)
 
-
+def analyze_platform_availability(assessment_id):
+    """
+    Analysiert die Antworten in Dimension 1 (Plattformverfügbarkeit)
+    und gibt den Status zurück.
+    
+    VEREINFACHTE LOGIK:
+    - 1.1=Ja UND 1.2=Ja UND 1.3=Ja → Eigene Plattform vorhanden
+    - 1.4=Ja → Eigenentwicklung möglich
+    - 1.5=Ja → Externe Unterstützung verfügbar
+    - 1.5=Nein → Nicht umsetzbar
+    - Sonst → Keine Entscheidung möglich
+    
+    Returns:
+        dict mit 'status', 'description', 'icon', 'color', 'explanation'
+        oder None wenn keine Antworten vorhanden
+    """
+    # Hole alle Antworten für Dimension 1 (Fragen 1.1 bis 1.6)
+    answers = db.session.query(Answer, Question).join(
+        Question, Answer.question_id == Question.id
+    ).filter(
+        Answer.assessment_id == assessment_id,
+        Question.code.like('1.%')
+    ).all()
+    
+    # Wenn keine Antworten vorhanden, return None
+    if not answers:
+        return None
+    
+    # Erstelle ein Dictionary mit question_code -> answer_option_code
+    answer_dict = {}
+    for answer, question in answers:
+        if answer.scale_option_id:
+            # Hole die Option (yes/no/n_a)
+            option = ScaleOption.query.get(answer.scale_option_id)
+            if option:
+                answer_dict[question.code] = option.code
+    
+    # FALL 1: Eigene Plattform vorhanden
+    # 1.1=Ja UND 1.2=Ja UND 1.3=Ja
+    if (answer_dict.get('1.1') == 'yes' and 
+        answer_dict.get('1.2') == 'yes' and 
+        answer_dict.get('1.3') == 'yes'):
+        return {
+            'status': 'platform_available',
+            'description': 'Eigene Plattform bereits vorhanden',
+            'icon': '✅',
+            'color': '#22c55e',
+            'explanation': 'Sie verfügen bereits über eine geeignete Automatisierungsplattform, die reif, stabil ist und alle benötigten Funktionen bereitstellt.'
+        }
+    
+    # FALL 2: Eigenentwicklung möglich
+    # 1.4=Ja (unabhängig von anderen Antworten)
+    if answer_dict.get('1.4') == 'yes':
+        return {
+            'status': 'internal_development',
+            'description': 'Eigenentwicklung möglich',
+            'icon': '🔧',
+            'color': '#3b82f6',
+            'explanation': 'Ihre internen Ressourcen und Kompetenzen sind ausreichend, um die Automatisierung selbstständig zu entwickeln und zu betreiben (ohne bestehende Plattform).'
+        }
+    
+    # FALL 3: Externe Unterstützung verfügbar
+    # 1.5=Ja
+    if answer_dict.get('1.5') == 'yes':
+        return {
+            'status': 'external_support',
+            'description': 'Externe Unterstützung verfügbar',
+            'icon': '🤝',
+            'color': '#f59e0b',
+            'explanation': 'Für die Umsetzung der Automatisierung kann auf externe Unterstützung durch Partner oder Dienstleister zugegriffen werden.'
+        }
+    
+    # FALL 4: Nicht umsetzbar
+    # 1.5=Nein (fehlende interne und externe Unterstützung)
+    if answer_dict.get('1.5') == 'no':
+        return {
+            'status': 'not_possible',
+            'description': 'Keine Automatisierung umsetzbar',
+            'icon': '❌',
+            'color': '#ef4444',
+            'explanation': 'Ohne interne Ressourcen und ohne Zugriff auf externe Unterstützung ist eine Automatisierung zum aktuellen Zeitpunkt nicht umsetzbar.'
+        }
+    
+    # FALL 5: Keine Entscheidung möglich
+    # Nichts von oben trifft zu
+    return {
+        'status': 'no_decision',
+        'description': 'Keine Entscheidung möglich',
+        'icon': '❓',
+        'color': '#9ca3af',
+        'explanation': 'Basierend auf den bisherigen Antworten kann noch keine abschließende Bewertung zur Plattformverfügbarkeit getroffen werden.'
+    }
 def serialize_question(question: Question, answers_map: dict, hints_map: dict):
     # Options (falls scale_id vorhanden)
     options = []
@@ -480,9 +602,6 @@ def index():
     )
 
 
-# ============================================
-# Route: Assessment bearbeiten
-# ============================================
 @app.route('/assessment/<int:assessment_id>/edit')
 def edit_assessment(assessment_id):
     """Zeigt Fragebogen zum Bearbeiten eines Assessments"""
@@ -495,7 +614,7 @@ def edit_assessment(assessment_id):
         questionnaire_version_id=qv.id
     ).order_by(Dimension.sort_order).all()
     
-    # Answers laden
+    # IM EDIT-MODUS: Lade IMMER die Antworten aus dem Assessment (nicht aus shared dimensions)
     answers_map = build_answers_map(assessment_id)
     hints_map = build_hints_map(qv.id)
     shared_dim_ids = get_shared_dimension_ids()
@@ -506,6 +625,8 @@ def edit_assessment(assessment_id):
             dimension_id=dim.id
         ).order_by(Question.sort_order).all()
         
+        # Im Edit-Modus: Verwende immer die answers_map vom Assessment
+        # (NICHT die shared dimension answers)
         dim.serialized_questions = [serialize_question(q, answers_map, hints_map) for q in questions]
         
         # Markiere Dimension als "gemeinsam nutzbar"
@@ -1106,6 +1227,9 @@ def view_assessment(assessment_id):
             'unit': metric.unit
         }
     
+    # Analyse Plattformverfügbarkeit
+    platform_status = analyze_platform_availability(assessment_id)
+    
     return render_template(
         'result.html',
         use_case=process,
@@ -1122,7 +1246,7 @@ def view_assessment(assessment_id):
         economic_metrics=economic_metrics_data if economic_metrics_data else None,  # Wirtschaftlichkeit
         run_id=assessment_id,
         recommendation=total_result.recommendation if total_result else None,
-        threshold=0.25  # Schwellenwert für Empfehlung
+        platform_status=platform_status
     )
 
 
@@ -1176,7 +1300,29 @@ def delete_assessment(assessment_id):
         import traceback
         traceback.print_exc()
         return f"Fehler beim Löschen: {str(e)}", 500
-
+# ============================================
+# Route: Gemeinsame Dimensionen zurücksetzen
+# ============================================
+@app.route('/reset_shared_dimensions', methods=['POST'])
+def reset_shared_dimensions():
+    """Löscht alle gemeinsam gespeicherten Dimensionsantworten"""
+    
+    try:
+        shared_dim_ids = get_shared_dimension_ids()
+        
+        for dim_id in shared_dim_ids:
+            SharedDimensionAnswer.query.filter_by(dimension_id=dim_id).delete()
+        
+        db.session.commit()
+        
+        print(f"✅ Gemeinsame Dimensionen {shared_dim_ids} wurden zurückgesetzt")
+        
+        return jsonify({'success': True}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Fehler beim Zurücksetzen gemeinsamer Dimensionen: {str(e)}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # ============================================
 # Route: CSV Export

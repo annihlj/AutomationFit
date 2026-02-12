@@ -398,10 +398,11 @@
                         </div>
 
                         {% for answer in dim.answers %}
+                        {% set parts = answer.question_text|question_regex %}
                         <div class="answer-item">
                             <div class="question-text">
                                 <span class="question-code">{{ answer.question_code }}</span>
-                                <span class="question-label">{{ answer.question_text }}</span>
+                                <span class="question-label">{{ parts.main }}</span>
                             </div>
 
                             <div class="answer-value" style="text-align:center">

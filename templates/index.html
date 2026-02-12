@@ -46,9 +46,9 @@
                         <span class="info-icon">🤖</span>
                         <div>
                             <small>
-                                <b>Process Automation (RPA):</b><br>
+                                <b>Robotic Process Automation (RPA):</b><br>
                                 Regelbasiert Automatisierung für klare Abläufe. <br>
-                                <b>Process Automation (IPA):</b><br>
+                                <b>Intelligent Process Automation (IPA):</b><br>
                                 KI-basiert Automatisierung für komplexe, unstrukturierte Daten.
                             </small>
                         </div>
@@ -88,18 +88,19 @@
                     </div>
                 </div>
 
-                <label for="uc_desc">Kurzbeschreibung <span class="req">*</span></label>
+                <label for="uc_desc">Kurzbeschreibung</label>
                 <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten"
                     required>{% if edit_mode and process_data %}{{ process_data.description }}{% endif %}</textarea>
             </fieldset>
 
             <!-- Gemeinsame Dimensionen Option -->
+            {% if not edit_mode %}
             <fieldset style="margin-top:1.5rem; background:#f0f9ff; border: 2px solid #3b82f6;">
                 <legend style="color:#1e40af; font-weight:600;">
                     Übergeordnete Eingaben
                 </legend>
                 <div style="padding:0.5rem 0.75rem 0.75rem 0.75rem;">
-                    <div <div
+                    <div
                         style="display: flex; align-items: center; gap: 2.2rem; margin-bottom: 0.2rem; min-height: 32px; width: 100%;">
                         <label class="toggle-switch" style="flex-shrink:0;">
                             <input type="checkbox" name="use_shared_dimensions" id="use_shared_dimensions" />
@@ -109,22 +110,18 @@
                             <b>
                                 Eingaben für "Plattformverfügbarkeit und Umsetzungsreife" und "Organisatorisch"
                                 gemeinsam speichern
-                                <span style="cursor: pointer; margin-left: 0.4em;"
-                                    title="Wenn aktiviert, werden die Antworten der Dimension 1 (Plattformverfügbarkeit und Umsetzungsreife) und Dimension 2 (Organisatorisch) übergreifend gespeichert und bei jedem neuen Assessment automatisch vorausgefüllt. Diese Option eignet sich für unternehmensweite Einstellungen, die sich selten ändern.">
-                                    <span
-                                        style="display: inline-block; width: 1.1em; height: 1.1em; border-radius: 50%; background: #e0e7ef; color: #2563eb; text-align: center; font-weight: bold; font-size: 0.95em; line-height: 1.1em; vertical-align: middle;">i</span>
+                                <span class="info-hover-wrapper" style="margin-left:0.4em;">
+                                    <span class="info-icon">i</span>
+                                    <span class="info-hover-block">
+                                        Wenn aktiviert, werden die Antworten der Dimension 1 (Plattformverfügbarkeit und Umsetzungsreife) und Dimension 2 (Organisatorisch) übergreifend gespeichert und bei jedem neuen Assessment automatisch vorausgefüllt. Wenn deaktiviert, werden die Felder geleert und die gemeinsamen Daten werden nicht verwendet.
+                                    </span>
                                 </span>
                             </b>
                         </div>
                     </div>
-                    <div style="display: flex; justify-content: flex-end; width: 100%;">
-                        <button type="button" id="reset-shared-btn" class="btn-secondary"
-                            style="display:none; margin-top:0.2rem;">
-                            🗑️ Gemeinsame Eingaben zurücksetzen
-                        </button>
-                    </div>
                 </div>
             </fieldset>
+            {% endif %}
 
             <!-- Dimensionen & Fragen -->
             {% for dimension in dimensions %}
@@ -193,9 +190,18 @@
                         data-conditions-logic="{{ logic_value }}"
                         style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem;">
 
-                        <label style="font-weight:600; display:block; margin-bottom:0.5rem">
-                            {{ question.code }} - {{ question.text }}
-                            <span style="color:#6b7280; font-weight:normal; font-size:0.9em">Info</span>
+                        {% set parts = question.text|question_regex %}
+                        <label
+                            style="font-weight:600; display:block; margin-bottom:0.5rem; word-break:break-word; white-space:normal; overflow-wrap:anywhere;">
+                            {{ question.code }} -
+                                <span style="font-weight:bold">{{ parts.main }}</span><br>
+                            </label>
+                            {% if parts.info %}
+                            <div class="info-hover-wrapper" style="margin-top:0.3em; cursor:pointer; display:inline-block; position:relative;">
+                                <span class="info-icon">i</span>
+                                <span class="info-hover-block">{{ parts.info }}</span>
+                            </div>
+                            {% endif %}
                         </label>
 
                         {% if question.type == 'number' %}
@@ -439,7 +445,6 @@
 
             // ----- Events -----
             form.addEventListener("change", (e) => {
-                // Multiple Choice Exklusivität behandeln
                 if (e.target.type === 'checkbox') {
                     handleMultipleChoiceExclusivity(e.target);
                 }
@@ -458,7 +463,6 @@
                 }, 0);
             });
 
-            // Dimension Toggle (wie vorher)
             document.querySelectorAll(".dimension-toggle").forEach(btn => {
                 const panel = document.getElementById(btn.getAttribute("aria-controls"));
                 panel.hidden = (btn.getAttribute("aria-expanded") !== "true");
@@ -469,24 +473,15 @@
                 });
             });
 
-            // === Toggle Switch für Gemeinsame Dimensionen (persistenter State & UI für Dim 1+2) ===
+            // === KORRIGIERT: Toggle Switch für gemeinsame Dimensionen ===
             const sharedToggle = document.getElementById('use_shared_dimensions');
-            const resetSharedBtn = document.getElementById('reset-shared-btn');
-            // IDs für Dimension 1 und 2 (Plattformverfügbarkeit & Organisatorisch)
             const sharedDimensionIds = [1, 2];
 
-            // Toggle-Status aus localStorage laden
             if (sharedToggle) {
+                // Toggle-Status aus localStorage laden
                 const saved = localStorage.getItem('use_shared_dimensions');
                 if (saved !== null) sharedToggle.checked = saved === 'true';
 
-                function updateResetButton() {
-                    if (resetSharedBtn) {
-                        resetSharedBtn.style.display = sharedToggle.checked ? 'inline-block' : 'none';
-                    }
-                }
-
-                // UI-Hervorhebung für Dim 1+2
                 function highlightSharedDimensions(active) {
                     sharedDimensionIds.forEach(id => {
                         const fieldset = document.querySelector(`[data-dimension-id="${id}"]`);
@@ -502,60 +497,92 @@
                     });
                 }
 
-                // Initial UI-State
-                updateResetButton();
-                highlightSharedDimensions(sharedToggle.checked);
-
-                sharedToggle.addEventListener('change', function () {
-                    localStorage.setItem('use_shared_dimensions', this.checked);
-                    updateResetButton();
-                    highlightSharedDimensions(this.checked);
-
-                    // Wenn Toggle ausgeschaltet wird, leere Felder in Dim 1+2
-                    if (!this.checked) {
-                        sharedDimensionIds.forEach(id => {
-                            const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
-                            if (dimPanel) {
-                                dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
-                                    input.value = '';
-                                });
-                                dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
-                                    input.checked = false;
-                                });
-                                dimPanel.querySelectorAll('select').forEach(select => {
-                                    select.selectedIndex = 0;
-                                });
-                            }
-                        });
-                        updateAllDimensionStatuses();
-                    }
-                });
-
-                // Reset Button Click Handler (leert den gesamten Fragebogen)
-                if (resetSharedBtn) {
-                    resetSharedBtn.addEventListener('click', function () {
-                        if (confirm('Möchten Sie wirklich alle Eingaben im Fragebogen zurücksetzen?')) {
-                            document.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                // ZENTRALE Funktion: Leere Felder in Dimension 1+2
+                function clearSharedDimensionsFields() {
+                    sharedDimensionIds.forEach(id => {
+                        const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
+                        if (dimPanel) {
+                            dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
                                 input.value = '';
                             });
-                            document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                            dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
                                 input.checked = false;
                             });
-                            document.querySelectorAll('select').forEach(select => {
+                            dimPanel.querySelectorAll('select').forEach(select => {
                                 select.selectedIndex = 0;
                             });
-                            updateAllDimensionStatuses();
-                            if (sharedToggle) {
-                                sharedToggle.checked = false;
-                                localStorage.setItem('use_shared_dimensions', 'false');
-                                updateResetButton();
-                                highlightSharedDimensions(false);
-                            }
                         }
                     });
+                    updateAllDimensionStatuses();
                 }
-            }
 
+                // Initial UI-State
+                highlightSharedDimensions(sharedToggle.checked);
+
+                // Wenn Toggle beim Laden aus ist, leere die Felder
+                if (!sharedToggle.checked) {
+                    clearSharedDimensionsFields();
+                }
+
+                // Toggle Change Event
+                sharedToggle.addEventListener('change', function () {
+                    const isChecked = this.checked;
+                    localStorage.setItem('use_shared_dimensions', isChecked);
+                    highlightSharedDimensions(isChecked);
+
+                    // Wenn Toggle ausgeschaltet wird: Felder sofort leeren
+                    if (!isChecked) {
+                        clearSharedDimensionsFields();
+                        console.log('✅ Dimension 1+2 Felder geleert (Toggle deaktiviert)');
+                    }
+                });
+            }
+            // === RESET-BUTTON: Standard-Verhalten ===
+            const resetButton = document.querySelector('button[type="reset"]');
+            if (resetButton) {
+                resetButton.addEventListener('click', function (e) {
+                    e.preventDefault();
+
+                    const confirmMessage = 'Möchten Sie wirklich alle Eingaben im Fragebogen zurücksetzen?';
+
+                    if (confirm(confirmMessage)) {
+                        // 1. Standard-Formular-Reset (außer protected fields)
+                        document.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                            // Schütze nur die obligatorischen Use-Case Felder
+                            if (input.id !== 'uc_name' && input.id !== 'uc_desc' && input.id !== 'industry') {
+                                input.value = '';
+                            }
+                        });
+                        document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                            // Schütze den Toggle selbst
+                            if (input.id !== 'use_shared_dimensions') {
+                                input.checked = false;
+                            }
+                        });
+                        document.querySelectorAll('select').forEach(select => {
+                            select.selectedIndex = 0;
+                        });
+                        document.querySelectorAll('textarea').forEach(textarea => {
+                            // Schütze Use-Case Beschreibung
+                            if (textarea.id !== 'uc_desc') {
+                                textarea.value = '';
+                            }
+                        });
+
+                        // 2. Wenn Toggle aus ist: Dimension 1+2 explizit leeren
+                        if (sharedToggle && !sharedToggle.checked) {
+                            clearSharedDimensionsFields();
+                        }
+
+                        // 3. UI-Updates
+                        applyAllVisibility();
+                        questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
+                        updateAllDimensionStatuses();
+
+                        console.log('✅ Formular wurde zurückgesetzt');
+                    }
+                });
+            }
             // Initial
             applyAllVisibility();
             questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
