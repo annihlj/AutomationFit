@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Fragebogen – Automation Fit</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phase234.css') }}">
+
+    <style>
+        /* Robust hide/show, ohne inline-style-Fragilität */
+        .is-hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="nav-logo">
+                <img src="{{ url_for('static', filename='logo.svg') }}" alt="Automation Fit Logo">
+                <span>Automation Fit</span>
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}" class="active">Fragebogen</a>
+                <a href="{{ url_for('comparison') }}">Vergleich</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="topbar">
+            <div>
+                <h1>
+                    {% if edit_mode %}
+                    ✏️ Assessment bearbeiten
+                    {% else %}
+                    Entscheidungsunterstützung: RPA vs. IPA
+                    {% endif %}
+                </h1>
+
+                <div class="quick-info-grid">
+                    <div class="info-card">
+                        <span class="info-icon">🤖</span>
+                        <div>
+                            <small>
+                                <b>Robotic Process Automation (RPA):</b><br>
+                                Regelbasiert Automatisierung für klare Abläufe. <br>
+                                <b>Intelligent Process Automation (IPA):</b><br>
+                                KI-basiert Automatisierung für komplexe, unstrukturierte Daten.
+                            </small>
+                        </div>
+                    </div>
+                    <div class="info-card">
+                        <span class="info-icon">⚙️</span>
+                        <div>
+                            <small>
+                                <b>Ihre Flexibilität:</b><br>
+                                Füllen Sie Dimensionen einzeln aus. <br>
+                                Alle Fragen sind optional – eine Auswertung ist jederzeit möglich.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <span class="badge">{{ questionnaire.name }} • v{{ questionnaire.version }}</span>
+        </div>
+
+        <form class="card" method="post"
+            action="{% if edit_mode %}{{ url_for('update_assessment', assessment_id=assessment_id) }}{% else %}{{ url_for('evaluate') }}{% endif %}"
+            id="mainForm">
+
+            <!-- Use-Case Metadaten -->
+            <fieldset>
+                <legend>Anwendungsfall</legend>
+                <div class="grid grid-2">
+                    <div>
+                        <label for="uc_name">Bezeichnung <span class="req">*</span></label>
+                        <input id="uc_name" name="uc_name" type="text" placeholder="z. B. Eingangsrechnungen prüfen"
+                            value="{% if edit_mode and process_data %}{{ process_data.name }}{% endif %}" required />
+                    </div>
+                    <div>
+                        <label for="industry">Branche</label>
+                        <input id="industry" name="industry" type="text" placeholder="z. B. Fertigung, Handel"
+                            value="{% if edit_mode and process_data %}{{ process_data.industry }}{% endif %}" />
+                    </div>
+                </div>
+
+                <label for="uc_desc">Kurzbeschreibung</label>
+                <textarea id="uc_desc" name="uc_desc" placeholder="Ziel, Ablauf in groben Schritten"
+                    required>{% if edit_mode and process_data %}{{ process_data.description }}{% endif %}</textarea>
+            </fieldset>
+
+            <!-- Gemeinsame Dimensionen Option -->
+            {% if not edit_mode %}
+            <fieldset style="margin-top:1.5rem; background:#f0f9ff; border: 2px solid #3b82f6;">
+                <legend style="color:#1e40af; font-weight:600;">
+                    Übergeordnete Eingaben
+                </legend>
+                <div style="padding:0.5rem 0.75rem 0.75rem 0.75rem;">
+                    <div
+                        style="display: flex; align-items: center; gap: 2.2rem; margin-bottom: 0.2rem; min-height: 32px; width: 100%;">
+                        <label class="toggle-switch" style="flex-shrink:0;">
+                            <input type="checkbox" name="use_shared_dimensions" id="use_shared_dimensions" />
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <div style="margin-left:0.5rem;">
+                            <b>
+                                Eingaben für "Plattformverfügbarkeit und Umsetzungsreife" und "Organisatorisch"
+                                gemeinsam speichern
+                                <span class="info-hover-wrapper" style="margin-left:0.4em;">
+                                    <span class="info-icon">i</span>
+                                    <span class="info-hover-block">
+                                        Wenn aktiviert, werden die Antworten der Dimension 1 (Plattformverfügbarkeit und Umsetzungsreife) und Dimension 2 (Organisatorisch) übergreifend gespeichert und bei jedem neuen Assessment automatisch vorausgefüllt. Wenn deaktiviert, werden die Felder geleert und die gemeinsamen Daten werden nicht verwendet.
+                                    </span>
+                                </span>
+                            </b>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+            {% endif %}
+
+            <!-- Dimensionen & Fragen -->
+            {% for dimension in dimensions %}
+            <fieldset class="dimension"
+                style="margin-top:0.7rem; padding:0.7rem 0.7rem 0.2rem 0.7rem; background:#fff; border:1px solid #e5e7eb;"
+                data-dimension-id="{{ dimension.id }}">
+                <legend class="dimension-legend">
+                    <button type="button" class="dimension-toggle" aria-expanded="false"
+                        aria-controls="dimension-panel-{{ dimension.id }}" id="dimension-toggle-{{ dimension.id }}">
+                        <span>
+                            {{ dimension.code }}. {{ dimension.name }}
+
+                            <!-- Status Badge -->
+                            <span class="dimension-status-badge" id="status-{{ dimension.id }}">
+                                <span class="status-badge not-started">Nicht gestartet</span>
+                            </span>
+
+                            <!-- Shared Badge -->
+                            {% if dimension.is_shared %}
+                            <span class="shared-badge"
+                                title="Diese Dimension kann gemeinsam für alle Assessments gespeichert werden">🔗
+                                Gemeinsam</span>
+                            {% endif %}
+                        </span>
+                        <span class="dimension-chevron" aria-hidden="true">▾</span>
+                    </button>
+                </legend>
+
+                <div class="dimension-panel" id="dimension-panel-{{ dimension.id }}" role="region"
+                    aria-labelledby="dimension-toggle-{{ dimension.id }}">
+
+                    {% for question in dimension.serialized_questions %}
+
+                    {# -----------------------------
+                    CONDITIONS (neu + legacy)
+                    Erwartet (neu): question.conditions (Liste) + question.depends_logic
+                    Legacy: question.depends_on + question.depends_on_option
+                    ----------------------------- #}
+
+                    {% set has_new_conditions = question.conditions is defined and question.conditions %}
+                    {% set has_legacy = question.depends_on is defined and question.depends_on and
+                    question.depends_on_option is defined and question.depends_on_option %}
+
+                    {# JSON fürs Frontend:
+                    - neu: question.conditions bereits als Liste von dicts [{question_id:..., option_id:...}, ...]
+                    - legacy: als 1-Element Liste nachgebildet
+                    #}
+                    {% if has_new_conditions %}
+                    {% set conditions_json = question.conditions|tojson %}
+                    {% elif has_legacy %}
+                    {% set conditions_json = ([{"question_id": question.depends_on, "option_id":
+                    question.depends_on_option}] )|tojson %}
+                    {% else %}
+                    {% set conditions_json = "[]" %}
+                    {% endif %}
+
+                    {% if question.depends_logic is defined and question.depends_logic %}
+                    {% set logic_value = question.depends_logic %}
+                    {% else %}
+                    {% set logic_value = "all" %}
+                    {% endif %}
+
+                    <div class="question-item {% if (has_new_conditions or has_legacy) and not edit_mode %}is-hidden{% endif %}"
+                        data-question-id="{{ question.id }}" data-question-code="{{ question.code }}"
+                        data-dimension-id="{{ dimension.id }}" data-conditions='{{ conditions_json|safe }}'
+                        data-conditions-logic="{{ logic_value }}"
+                        style="margin-bottom:1.5rem; padding:1rem; background:#f9fafb; border-radius:0.5rem;">
+
+                        {% set parts = question.text|question_regex %}
+                        <label
+                            style="font-weight:600; display:block; margin-bottom:0.5rem; word-break:break-word; white-space:normal; overflow-wrap:anywhere;">
+                            {{ question.code }} -
+                                <span style="font-weight:bold">{{ parts.main }}</span><br>
+                            </label>
+                            {% if parts.info %}
+                            <div class="info-hover-wrapper" style="margin-top:0.3em; cursor:pointer; display:inline-block; position:relative;">
+                                <span class="info-icon">i</span>
+                                <span class="info-hover-block">{{ parts.info }}</span>
+                            </div>
+                            {% endif %}
+                        </label>
+
+                        {% if question.type == 'number' %}
+                        <!-- Number Input -->
+                        <input type="number" name="q_{{ question.id }}" min="0" step="any"
+                            placeholder="Wert eingeben{% if question.unit %} ({{ question.unit }}){% endif %}"
+                            value="{% if question.answer is not none %}{{ question.answer }}{% endif %}"
+                            data-dimension-id="{{ dimension.id }}" style="max-width:300px" />
+                        {% if question.unit %}
+                        <span style="margin-left:0.5rem; color:#6b7280">{{ question.unit }}</span>
+                        {% endif %}
+
+                        {% elif question.type == 'single_choice' %}
+                        <!-- Single Choice -->
+                        <div class="likert" role="radiogroup">
+                            <div class="likert-row likert-{{ question.options|length }}">
+                                {% for option in question.options %}
+                                <label class="likert-item {% if option.is_na %}is-na{% endif %}">
+                                    <span class="likert-label">{{ option.label }}</span>
+                                    <input class="likert-input filter-trigger" type="radio" name="q_{{ question.id }}"
+                                        value="{{ option.id }}" data-option-code="{{ option.code }}"
+                                        data-option-id="{{ option.id }}" data-question-id="{{ question.id }}"
+                                        data-dimension-id="{{ dimension.id }}" {% if question.answer==option.id
+                                        %}checked{% endif %} />
+                                    <span class="likert-circle" aria-hidden="true"></span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Hints -->
+                        {% if question.hints %}
+                        <div class="hints-container">
+                            {% for option in question.options %}
+                            {% if option.id in question.hints %}
+                            {% for hint in question.hints[option.id] %}
+                            <div class="hint hint-{{ hint.type }}" style="display:none;"
+                                data-option-id="{{ option.id }}" data-question-id="{{ question.id }}">
+                                <span class="hint-icon">
+                                    {% if hint.type == 'error' %}⚠️
+                                    {% elif hint.type == 'warning' %}⚡
+                                    {% else %}ℹ️{% endif %}
+                                </span>
+                                <span class="hint-text">{{ hint.text }}</span>
+                            </div>
+                            {% endfor %}
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% elif question.type == 'multiple_choice' %}
+                        <!-- Multiple Choice -->
+                        <div class="checkbox-group" role="group">
+                            <div class="checkbox-row checkbox-{{ question.options|length }}">
+                                {% for option in question.options %}
+                                <label class="checkbox-item {% if option.is_na %}is-na{% endif %}">
+                                    <span class="checkbox-label">{{ option.label }}</span>
+                                    <input class="checkbox-input" type="checkbox" name="q_{{ question.id }}[]"
+                                        value="{{ option.id }}" data-option-code="{{ option.code }}"
+                                        data-option-id="{{ option.id }}" data-question-id="{{ question.id }}"
+                                        data-dimension-id="{{ dimension.id }}" {% if question.answer and option.id in
+                                        question.answer %}checked{% endif %} />
+                                    <span class="checkbox-box" aria-hidden="true"></span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            {% endfor %}
+
+            <!-- Submit Actions -->
+            <div class="actions">
+                {% if edit_mode %}
+                <a href="{{ url_for('view_assessment', assessment_id=assessment_id) }}" class="secondary">Abbrechen</a>
+                <button type="submit">Änderungen speichern & neu auswerten</button>
+                {% else %}
+                <button type="reset" class="secondary">Zurücksetzen</button>
+                <button type="submit">Bewertung berechnen</button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const form = document.getElementById("mainForm");
+            const questionItems = Array.from(document.querySelectorAll(".question-item"));
+
+            // ----- Antworten lesen -----
+            function getSelectedOptionIds(questionId) {
+                const radio = form.querySelector(`input[type="radio"][name="q_${questionId}"]:checked`);
+                if (radio) return new Set([String(radio.value)]);
+
+                const checks = Array.from(form.querySelectorAll(`input[type="checkbox"][name="q_${questionId}[]"]:checked`));
+                if (checks.length) return new Set(checks.map(c => String(c.value)));
+
+                return new Set();
+            }
+
+            // ----- Hints -----
+            function hideAllHints(questionId) {
+                document.querySelectorAll(`.hint[data-question-id="${questionId}"]`)
+                    .forEach(h => h.style.display = "none");
+            }
+
+            function showHintsForSelected(questionId) {
+                hideAllHints(questionId);
+                const selected = getSelectedOptionIds(questionId);
+                selected.forEach(optionId => {
+                    document.querySelectorAll(`.hint[data-question-id="${questionId}"][data-option-id="${optionId}"]`)
+                        .forEach(h => h.style.display = "flex");
+                });
+            }
+
+            // ----- Conditions -----
+            function parseConditions(el) {
+                try {
+                    const raw = el.dataset.conditions || "[]";
+                    const arr = JSON.parse(raw);
+                    return (Array.isArray(arr) ? arr : []).map(c => ({
+                        question_id: String(c.question_id),
+                        option_id: String(c.option_id),
+                    }));
+                } catch (e) {
+                    console.warn("❌ Condition JSON kaputt bei", el.dataset.questionCode, e);
+                    return [];
+                }
+            }
+
+            function evalConditions(el) {
+                const conds = parseConditions(el);
+                if (!conds.length) return true;
+
+                const logic = (el.dataset.conditionsLogic || "all").toLowerCase(); // all | any
+                const results = conds.map(c => getSelectedOptionIds(c.question_id).has(c.option_id));
+
+                return logic === "any" ? results.some(Boolean) : results.every(Boolean);
+            }
+
+            function clearInputs(el) {
+                el.querySelectorAll('input[type="radio"]:checked').forEach(r => r.checked = false);
+                el.querySelectorAll('input[type="checkbox"]:checked').forEach(c => c.checked = false);
+                el.querySelectorAll('input[type="number"]').forEach(n => n.value = "");
+                hideAllHints(el.dataset.questionId);
+            }
+
+            function setVisible(el, visible) {
+                const hidden = el.classList.contains("is-hidden");
+                if (visible && hidden) el.classList.remove("is-hidden");
+                if (!visible && !hidden) {
+                    el.classList.add("is-hidden");
+                    clearInputs(el);
+                }
+            }
+
+            // Iterativ, damit Kaskaden funktionieren
+            function applyAllVisibility() {
+                let changed = true;
+                let guard = 0;
+
+                while (changed && guard < 50) {
+                    changed = false;
+                    guard++;
+
+                    questionItems.forEach(el => {
+                        const shouldShow = evalConditions(el);
+                        const isShow = !el.classList.contains("is-hidden");
+                        if (shouldShow !== isShow) {
+                            setVisible(el, shouldShow);
+                            changed = true;
+                        }
+                    });
+                }
+            }
+
+            // ----- Status -----
+            function isAnswered(qid) {
+                const num = form.querySelector(`input[type="number"][name="q_${qid}"]`);
+                if (num && num.value.trim() !== "") return true;
+                return getSelectedOptionIds(qid).size > 0;
+            }
+
+            function updateDimensionStatus(dimensionId) {
+                const dim = document.querySelector(`fieldset.dimension[data-dimension-id="${dimensionId}"]`);
+                if (!dim) return;
+
+                const visibleQs = Array.from(dim.querySelectorAll(".question-item"))
+                    .filter(q => !q.classList.contains("is-hidden"));
+
+                const total = visibleQs.length;
+                let answered = 0;
+                visibleQs.forEach(q => { if (isAnswered(q.dataset.questionId)) answered++; });
+
+                let html = "";
+                if (answered === 0) html = '<span class="status-badge not-started">Nicht gestartet</span>';
+                else if (answered < total) html = `<span class="status-badge partial">Teilweise (${answered}/${total})</span>`;
+                else html = '<span class="status-badge complete">Vollständig ✓</span>';
+
+                const badge = document.getElementById(`status-${dimensionId}`);
+                if (badge) badge.innerHTML = html;
+            }
+
+            function updateAllDimensionStatuses() {
+                const dimIds = new Set(questionItems.map(q => q.dataset.dimensionId).filter(Boolean));
+                dimIds.forEach(id => updateDimensionStatus(id));
+            }
+
+            // ----- Multiple Choice: Reset bei "Keine der genannten" oder "Keine Angabe" -----
+            function handleMultipleChoiceExclusivity(checkbox) {
+                if (!checkbox.classList.contains('checkbox-input')) return;
+
+                const questionId = checkbox.dataset.questionId;
+                const optionCode = checkbox.dataset.optionCode;
+                const checkboxGroup = checkbox.closest('.checkbox-group');
+
+                if (!checkboxGroup) return;
+
+                // Prüfe ob "Keine der genannten" (NONE) oder "Keine Angabe" (NA/KA) gewählt wurde
+                if ((optionCode === 'NONE' || optionCode === 'NA' || optionCode === 'KA') && checkbox.checked) {
+                    // Deaktiviere alle anderen Checkboxen in dieser Frage
+                    checkboxGroup.querySelectorAll(`input[data-question-id="${questionId}"]`).forEach(cb => {
+                        if (cb !== checkbox && cb.checked) {
+                            cb.checked = false;
+                        }
+                    });
+                } else if (checkbox.checked) {
+                    // Wenn eine normale Option gewählt wird, deaktiviere "Keine der genannten" / "Keine Angabe"
+                    checkboxGroup.querySelectorAll(`input[data-question-id="${questionId}"]`).forEach(cb => {
+                        const code = cb.dataset.optionCode;
+                        if ((code === 'NONE' || code === 'NA' || code === 'KA') && cb.checked) {
+                            cb.checked = false;
+                        }
+                    });
+                }
+            }
+
+            // ----- Events -----
+            form.addEventListener("change", (e) => {
+                if (e.target.type === 'checkbox') {
+                    handleMultipleChoiceExclusivity(e.target);
+                }
+
+                applyAllVisibility();
+                const qid = e.target.dataset.questionId;
+                if (qid) showHintsForSelected(qid);
+                updateAllDimensionStatuses();
+            });
+
+            form.addEventListener("reset", () => {
+                setTimeout(() => {
+                    applyAllVisibility();
+                    questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
+                    updateAllDimensionStatuses();
+                }, 0);
+            });
+
+            document.querySelectorAll(".dimension-toggle").forEach(btn => {
+                const panel = document.getElementById(btn.getAttribute("aria-controls"));
+                panel.hidden = (btn.getAttribute("aria-expanded") !== "true");
+                btn.addEventListener("click", () => {
+                    const expanded = btn.getAttribute("aria-expanded") === "true";
+                    btn.setAttribute("aria-expanded", String(!expanded));
+                    panel.hidden = expanded;
+                });
+            });
+
+            // === KORRIGIERT: Toggle Switch für gemeinsame Dimensionen ===
+            const sharedToggle = document.getElementById('use_shared_dimensions');
+            const sharedDimensionIds = [1, 2];
+
+            if (sharedToggle) {
+                // Toggle-Status aus localStorage laden
+                const saved = localStorage.getItem('use_shared_dimensions');
+                if (saved !== null) sharedToggle.checked = saved === 'true';
+
+                function highlightSharedDimensions(active) {
+                    sharedDimensionIds.forEach(id => {
+                        const fieldset = document.querySelector(`[data-dimension-id="${id}"]`);
+                        if (fieldset) {
+                            if (active) {
+                                fieldset.style.boxShadow = '0 0 0 3px #0284c755';
+                                fieldset.style.borderColor = '#0284c7';
+                            } else {
+                                fieldset.style.boxShadow = '';
+                                fieldset.style.borderColor = '';
+                            }
+                        }
+                    });
+                }
+
+                // ZENTRALE Funktion: Leere Felder in Dimension 1+2
+                function clearSharedDimensionsFields() {
+                    sharedDimensionIds.forEach(id => {
+                        const dimPanel = document.querySelector(`[data-dimension-id="${id}"]`);
+                        if (dimPanel) {
+                            dimPanel.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                                input.value = '';
+                            });
+                            dimPanel.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                                input.checked = false;
+                            });
+                            dimPanel.querySelectorAll('select').forEach(select => {
+                                select.selectedIndex = 0;
+                            });
+                        }
+                    });
+                    updateAllDimensionStatuses();
+                }
+
+                // Initial UI-State
+                highlightSharedDimensions(sharedToggle.checked);
+
+                // Wenn Toggle beim Laden aus ist, leere die Felder
+                if (!sharedToggle.checked) {
+                    clearSharedDimensionsFields();
+                }
+
+                // Toggle Change Event
+                sharedToggle.addEventListener('change', function () {
+                    const isChecked = this.checked;
+                    localStorage.setItem('use_shared_dimensions', isChecked);
+                    highlightSharedDimensions(isChecked);
+
+                    // Wenn Toggle ausgeschaltet wird: Felder sofort leeren
+                    if (!isChecked) {
+                        clearSharedDimensionsFields();
+                        console.log('✅ Dimension 1+2 Felder geleert (Toggle deaktiviert)');
+                    }
+                });
+            }
+            // === RESET-BUTTON: Standard-Verhalten ===
+            const resetButton = document.querySelector('button[type="reset"]');
+            if (resetButton) {
+                resetButton.addEventListener('click', function (e) {
+                    e.preventDefault();
+
+                    const confirmMessage = 'Möchten Sie wirklich alle Eingaben im Fragebogen zurücksetzen?';
+
+                    if (confirm(confirmMessage)) {
+                        // 1. Standard-Formular-Reset (außer protected fields)
+                        document.querySelectorAll('input[type="text"], input[type="number"]').forEach(input => {
+                            // Schütze nur die obligatorischen Use-Case Felder
+                            if (input.id !== 'uc_name' && input.id !== 'uc_desc' && input.id !== 'industry') {
+                                input.value = '';
+                            }
+                        });
+                        document.querySelectorAll('input[type="radio"], input[type="checkbox"]').forEach(input => {
+                            // Schütze den Toggle selbst
+                            if (input.id !== 'use_shared_dimensions') {
+                                input.checked = false;
+                            }
+                        });
+                        document.querySelectorAll('select').forEach(select => {
+                            select.selectedIndex = 0;
+                        });
+                        document.querySelectorAll('textarea').forEach(textarea => {
+                            // Schütze Use-Case Beschreibung
+                            if (textarea.id !== 'uc_desc') {
+                                textarea.value = '';
+                            }
+                        });
+
+                        // 2. Wenn Toggle aus ist: Dimension 1+2 explizit leeren
+                        if (sharedToggle && !sharedToggle.checked) {
+                            clearSharedDimensionsFields();
+                        }
+
+                        // 3. UI-Updates
+                        applyAllVisibility();
+                        questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
+                        updateAllDimensionStatuses();
+
+                        console.log('✅ Formular wurde zurückgesetzt');
+                    }
+                });
+            }
+            // Initial
+            applyAllVisibility();
+            questionItems.forEach(q => showHintsForSelected(q.dataset.questionId));
+            updateAllDimensionStatuses();
+
+            // Wirtschaftliche Dimension immer leeren beim Seitenaufruf
+            document.querySelectorAll('.economic-metric input[type="number"]').forEach(input => {
+                input.value = '';
+            });
+        });
+    </script>
+</body>
+
+</html>

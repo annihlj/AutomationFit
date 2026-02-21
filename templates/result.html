@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ergebnis – Automation Fit (Phase 2+3+4)</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/phase234.css') }}">
+
+    <style>
+        /* =========================
+           Results UI Overrides
+           ========================= */
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .results-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: .5rem;
+            min-width: 220px;
+        }
+
+        /* Schlanker Button, passend zum Design (Link als Button) */
+        .btn-ui {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .5rem;
+            padding: .6rem .95rem;
+            border-radius: 10px;
+            font-weight: 700;
+            text-decoration: none;
+            border: 1px solid transparent;
+            box-shadow: var(--shadow-sm);
+            transition: background .2s ease, transform .08s ease, border-color .2s ease;
+            font-size: .95rem;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .btn-ui:active {
+            transform: translateY(1px);
+        }
+
+        .btn-ui-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        .btn-ui-primary:hover {
+            background: #0369a1;
+        }
+
+        /* Empfehlung: schlichter Pill, farblich wie bisher (neutral/rpa/ipa) */
+        .rec-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            border-radius: 999px;
+            padding: .45rem .75rem;
+            font-weight: 800;
+            border: 1px solid var(--line);
+            background: #f8fafc;
+            color: var(--text);
+            font-size: .9rem;
+        }
+
+        .rec-pill.rpa {
+            background: #dcfce7;
+            border-color: #86efac;
+            color: #15803d;
+        }
+
+        .rec-pill.ipa {
+            background: #e0f2fe;
+            border-color: #7dd3fc;
+            color: #0369a1;
+        }
+
+        .rec-pill.neutral {
+            background: #fef3c7;
+            border-color: #fcd34d;
+            color: #b45309;
+        }
+
+        /* KPI Grid: alle drei gleich breit (überschreibt dein grid-3 2fr/1fr/1fr) */
+        .kpi-grid {
+            display: grid;
+            gap: 1rem;
+            margin-top: 1rem;
+            grid-template-columns: 1fr;
+        }
+
+        @media (min-width: 900px) {
+            .kpi-grid {
+                grid-template-columns: 1fr 1fr 1fr;
+            }
+        }
+
+        /* KPI Card Inhalt konsistent */
+        .kpi-card {
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        .kpi-title {
+            margin: .25rem 0;
+        }
+
+        .kpi-score {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: .4rem;
+            margin: .25rem 0 .6rem;
+        }
+
+        .kpi-score .value {
+            font-size: 1.75rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+        }
+
+        .kpi-score .max {
+            color: var(--muted);
+            font-weight: 700;
+        }
+
+        /* Balken: dynamische Breite (1-5) + Farblogik */
+        .score-bar {
+            width: 220px;
+            height: 12px;
+            background: #e2e8f0;
+            border-radius: 999px;
+            overflow: hidden;
+            margin: .25rem 0 .25rem;
+        }
+
+        .score-bar-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+        }
+
+        .score-bar-fill.bad {
+            background: var(--bad);
+        }
+
+        .score-bar-fill.warn {
+            background: var(--warn);
+        }
+
+        .score-bar-fill.ok {
+            background: var(--ok);
+        }
+
+        .excluded-box {
+            padding: 1rem;
+            background: #fee2e2;
+            border-radius: .75rem;
+            color: #991b1b;
+            text-align: center;
+            width: 220px;
+            border: 1px solid #fecaca;
+            font-weight: 800;
+        }
+
+        .diff-number {
+            font-size: 1.8rem;
+            font-weight: 900;
+            margin: .25rem 0;
+        }
+
+        .diff-hint {
+            margin: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="{{ url_for('index') }}" class="nav-logo">
+                <img src="{{ url_for('static', filename='logo.svg') }}" alt="Automation Fit Logo">
+                <span>Automation Fit</span>
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}">Fragebogen</a>
+                <a href="{{ url_for('comparison') }}">Vergleich</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+
+        <!-- Header: rechts erst Button, darunter Empfehlung -->
+        <header class="results-header">
+            <div>
+                <h1>Ergebnis der Bewertung</h1>
+                <p class="lead">
+                    Anwendungsfall: <strong>{{ use_case.name }}</strong> — {{ use_case.industry or "Branche n. a." }}
+                </p>
+                <span class="badge">Run-ID: {{ run_id }}</span>
+            </div>
+
+            <div class="results-actions">
+                {% if assessment_id %}
+                <a href="{{ url_for('edit_assessment', assessment_id=assessment_id) }}" class="btn-ui btn-ui-primary">
+                    <!-- Icon bleibt, aber ohne Inline-Styling -->
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        aria-hidden="true">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                    Bewertung bearbeiten
+                </a>
+                {% endif %}
+
+                {% set rec_class = 'neutral' %}
+                {% if recommendation == 'RPA' %}{% set rec_class = 'rpa' %}
+                {% elif recommendation == 'IPA' %}{% set rec_class = 'ipa' %}
+                {% endif %}
+
+                <div class="rec-pill {{ rec_class }}" aria-live="polite">
+                    Empfehlung: {{ recommendation if recommendation else "Unentschieden" }}
+                </div>
+            </div>
+        </header>
+
+        <!-- KPIs (gleich groß + Balken 1-5) -->
+        <section class="kpi-grid">
+            <!-- RPA -->
+            <div class="card kpi-card">
+                <h3 class="kpi-title">Gesamtscore RPA</h3>
+
+                {% if rpa_excluded %}
+                <div class="excluded-box">❌ Ausgeschlossen</div>
+
+                {% elif total_rpa is not none %}
+                {% set rpa_class = 'ok' if total_rpa > 4 else ('warn' if total_rpa >= 2 else 'bad') %}
+                {% set rpa_width = ((total_rpa / 5) * 100) %}
+                <div class="kpi-score">
+                    <span class="value">{{ "%.2f"|format(total_rpa) }}</span>
+                    <span class="max">/ 5.00</span>
+                </div>
+                <div class="score-bar" aria-label="RPA Score Balken">
+                    <span class="score-bar-fill {{ rpa_class }}" style="width: {{ rpa_width|round(0) }}%;"></span>
+                </div>
+
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
+            </div>
+
+            <!-- IPA -->
+            <div class="card kpi-card">
+                <h3 class="kpi-title">Gesamtscore IPA</h3>
+
+                {% if ipa_excluded %}
+                <div class="excluded-box">❌ Ausgeschlossen</div>
+
+                {% elif total_ipa is not none %}
+                {% set ipa_class = 'ok' if total_ipa > 4 else ('warn' if total_ipa >= 2 else 'bad') %}
+                {% set ipa_width = ((total_ipa / 5) * 100) %}
+                <div class="kpi-score">
+                    <span class="value">{{ "%.2f"|format(total_ipa) }}</span>
+                    <span class="max">/ 5.00</span>
+                </div>
+                <div class="score-bar" aria-label="IPA Score Balken">
+                    <span class="score-bar-fill {{ ipa_class }}" style="width: {{ ipa_width|round(0) }}%;"></span>
+                </div>
+
+                {% else %}
+                <p class="muted">Nicht verfügbar</p>
+                {% endif %}
+            </div>
+
+            <!-- DIFFERENZ (Schwellenwert entfernt) -->
+            <div class="card kpi-card" style="align-items:center;">
+                <h3 class="kpi-title">Differenz</h3>
+
+                {% if total_rpa is not none and total_ipa is not none %}
+                {% set diff = (total_ipa - total_rpa) %}
+                <div class="diff-number">{{ "%+.2f"|format(diff) }}</div>
+                <p class="muted diff-hint">(IPA − RPA)</p>
+                {% else %}
+                <p class="muted">Nicht berechenbar</p>
+                {% endif %}
+            </div>
+        </section>
+
+        <!-- Dimensionsübersicht mit Details -->
+        <section class="card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">Ergebnisse nach Dimensionen</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Klicken Sie auf eine Dimension um Details zu den Antworten und
+                Scores zu sehen.</p>
+
+            {% for dim in breakdown %}
+            <div class="dimension-detail" id="dim-{{ loop.index }}">
+                <div class="dimension-header" onclick="toggleDimension('dim-{{ loop.index }}')">
+                    <h4>
+                        <span class="expand-icon" id="icon-dim-{{ loop.index }}">▶</span>
+                        <strong>{{ dim.code }}.</strong> {{ dim.name }}
+
+                        {% if dim.status == 'not_started' %}
+                        <span class="status-badge not-started" style="margin-left:0.5rem;">Nicht ausgefüllt</span>
+                        {% elif dim.status == 'partial' %}
+                        <span class="status-badge partial" style="margin-left:0.5rem;">Teilweise</span>
+                        {% elif dim.status == 'complete' %}
+                        <span class="status-badge complete" style="margin-left:0.5rem;">Vollständig</span>
+                        {% endif %}
+
+                        {% if dim.is_shared %}
+                        <span class="shared-badge" style="margin-left:0.5rem;">Gemeinsam</span>
+                        {% endif %}
+                    </h4>
+
+                    <div style="display:flex; gap:2rem; align-items:center">
+                        {% if not dim.is_shared %}
+                        <div style="min-width:120px; text-align:center;">
+                            <span class="muted" style="font-size:0.875rem">RPA:</span>
+                            {% if dim.rpa_excluded %}
+                            <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
+                            {% elif dim.rpa_score is not none %}
+                            {% set rpa_dim_color = '#22c55e' if dim.rpa_score > 4 else ('#facc15' if dim.rpa_score >= 2
+                            else '#ef4444') %}
+                            <span
+                                style="font-weight:700; font-size:1.1rem; margin-left:0.5rem; color:{{ rpa_dim_color }}">
+                                {{ "%.2f"|format(dim.rpa_score) }}
+                            </span>
+                            {% else %}
+                            <span class="muted" style="margin-left:0.5rem">–</span>
+                            {% endif %}
+                        </div>
+
+                        <div style="min-width:120px; text-align:center;">
+                            <span class="muted" style="font-size:0.875rem">IPA:</span>
+                            {% if dim.ipa_excluded %}
+                            <span style="color:#f87171; font-weight:600; margin-left:0.5rem">❌ Ausgeschlossen</span>
+                            {% elif dim.ipa_score is not none %}
+                            {% set ipa_dim_color = '#22c55e' if dim.ipa_score > 4 else ('#facc15' if dim.ipa_score >= 2
+                            else '#ef4444') %}
+                            <span
+                                style="font-weight:700; font-size:1.1rem; margin-left:0.5rem; color:{{ ipa_dim_color }}">
+                                {{ "%.2f"|format(dim.ipa_score) }}
+                            </span>
+                            {% else %}
+                            <span class="muted" style="margin-left:0.5rem">–</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div>
+                            <span class="muted" style="font-size:0.875rem">Diese Dimension gilt für beide
+                                Automatisierungsarten</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="dimension-content" id="content-dim-{{ loop.index }}">
+                    {% if dim.calc_method == 'filter' %}
+                    <div style="padding:1rem; background:#fef3c7; border-radius:0.5rem; margin-bottom:1rem;">
+                        <strong>ℹ️ Filter-Dimension:</strong> Diese Dimension dient der Vorauswahl.
+                        Scores werden nicht berechnet, nur Ausschlusskriterien geprüft.
+                    </div>
+                    {% endif %}
+
+                    {% if dim.calc_method == 'economic_score' %}
+                    <div style="padding:1rem; background:#dbeafe; border-radius:0.5rem; margin-bottom:1rem;">
+                        <strong>💰 Wirtschaftlichkeits-Dimension:</strong> Hier werden ROI, Payback-Period und weitere
+                        Kennzahlen berechnet.
+                    </div>
+                    {% endif %}
+
+                    {% if dim.answers %}
+                    <div style="padding:0.5rem 0">
+                        <div class="answer-item answer-header">
+                            <div>Frage</div>
+                            <div style="text-align:center">Antwort</div>
+                            {% if not dim.is_shared %}
+                            <div style="text-align:center">RPA Score</div>
+                            <div style="text-align:center">IPA Score</div>
+                            {% endif %}
+                        </div>
+
+                        {% for answer in dim.answers %}
+                        {% set parts = answer.question_text|question_regex %}
+                        <div class="answer-item">
+                            <div class="question-text">
+                                <span class="question-code">{{ answer.question_code }}</span>
+                                <span class="question-label">{{ parts.main }}</span>
+                            </div>
+
+                            <div class="answer-value" style="text-align:center">
+                                {% if answer.get('is_applicable') == False %}
+                                <em class="not-applicable">Nicht anwendbar 🔒</em>
+                                {% else %}
+                                {{ answer.answer }}
+                                {% endif %}
+                            </div>
+
+                            {% if not dim.is_shared %}
+                            <div style="text-align:center">
+                                {% if answer.get('is_applicable') == False %}
+                                <span class="muted">–</span>
+                                {% elif answer.rpa_score == 'AUSSCHLUSS' %}
+                                <span class="score-badge excluded">❌</span>
+                                {% elif answer.rpa_score == 'N/A' %}
+                                <span class="score-badge na">–</span>
+                                {% elif answer.rpa_score %}
+                                <span class="score-badge rpa">{{ answer.rpa_score }}</span>
+                                {% else %}
+                                <span class="score-badge na">–</span>
+                                {% endif %}
+                            </div>
+
+                            <div style="text-align:center">
+                                {% if answer.get('is_applicable') == False %}
+                                <span class="muted">–</span>
+                                {% elif answer.ipa_score == 'AUSSCHLUSS' %}
+                                <span class="score-badge excluded">❌</span>
+                                {% elif answer.ipa_score == 'N/A' %}
+                                <span class="score-badge na">–</span>
+                                {% elif answer.ipa_score %}
+                                <span class="score-badge ipa">{{ answer.ipa_score }}</span>
+                                {% else %}
+                                <span class="score-badge na">–</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+
+                        <style>
+                            .answer-header {
+                                background: #f3f4f6;
+                                font-weight: 700;
+                                font-size: 0.95rem;
+                                border-radius: 8px 8px 0 0;
+                            }
+
+                            .answer-item {
+                                background: #fff;
+                                font-size: 0.92rem;
+                            }
+
+                            .answer-item:nth-child(even) {
+                                background: #f8fafc;
+                            }
+
+                            .question-code {
+                                color: var(--accent);
+                                font-weight: 600;
+                                margin-right: 0.5rem;
+                            }
+
+                            .question-label {
+                                color: var(--text);
+                            }
+
+                            .not-applicable {
+                                color: #9ca3af;
+                                font-style: italic;
+                            }
+
+                            .score-badge {
+                                display: inline-block;
+                                padding: 0.25rem 0.75rem;
+                                border-radius: 999px;
+                                font-weight: 600;
+                                font-size: 0.85rem;
+                                text-align: center;
+                            }
+
+                            .score-badge.rpa {
+                                background: #eff6ff;
+                                color: #3b82f6;
+                                border: 1px solid #dbeafe;
+                            }
+
+                            .score-badge.ipa {
+                                background: #ecfdf5;
+                                color: #10b981;
+                                border: 1px solid #d1fae5;
+                            }
+
+                            .score-badge.excluded {
+                                background: #fef2f2;
+                                color: #ef4444;
+                                border: 1px solid #fee2e2;
+                            }
+
+                            .score-badge.na {
+                                background: #f1f5f9;
+                                color: #94a3b8;
+                                border: 1px solid #e2e8f0;
+                            }
+                        </style>
+                    </div>
+                    {% else %}
+                    <p class="muted" style="padding:1rem">
+                        {% if dim.status == 'not_started' %}
+                        Diese Dimension wurde nicht ausgefüllt.
+                        {% else %}
+                        Keine Antworten erfasst.
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+
+        <!-- Wirtschaftlichkeitsbetrachtung -->
+        {% if economic_metrics %}
+        <section class="card economic-card" style="margin-top:1rem">
+            <h3 style="margin:.25rem 0">Wirtschaftlichkeit</h3>
+            <p class="muted" style="margin:.25rem 0 1rem">Berechnete Werte basierend auf Ihren Angaben aus Dimension 7
+            </p>
+
+            <div class="grid grid-3 economic-grid" style="gap:1rem">
+                {% if 'roi' in economic_metrics %}
+                <div class="eco-box">
+                    <div class="eco-label">Return on Investment (ROI)</div>
+                    <div class="eco-value"
+                        style="color:{{ 'var(--ok)' if economic_metrics.roi.value > 0 else 'var(--bad)' }}">
+                        {{ "{:+.1%}".format(economic_metrics.roi.value) }}
+                    </div>
+                    <div class="eco-desc">
+                        {% if economic_metrics.roi.value > 1.0 %}✅ Sehr rentabel
+                        {% elif economic_metrics.roi.value > 0.5 %}✅ Rentabel
+                        {% elif economic_metrics.roi.value > 0.2 %}⚠️ Mäßig rentabel
+                        {% elif economic_metrics.roi.value > 0 %}⚠️ Gering rentabel
+                        {% else %}❌ Nicht rentabel
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'personeller_nutzen' in economic_metrics %}
+                <div class="eco-box">
+                    <div class="eco-label">Personeller Nutzen</div>
+                    <div class="eco-value accent">{{ "{:,.0f}".format(economic_metrics.personeller_nutzen.value) }} €
+                    </div>
+                    <div class="eco-desc">pro Jahr</div>
+                </div>
+                {% endif %}
+
+                {% if 'fte_einsparung' in economic_metrics %}
+                <div class="eco-box">
+                    <div class="eco-label">FTE-Einsparung</div>
+                    <div class="eco-value accent">{{ "%.2f"|format(economic_metrics.fte_einsparung.value) }}</div>
+                    <div class="eco-desc">Vollzeitäquivalente</div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="grid grid-2" style="gap:1rem; margin-top:1rem">
+                {% if 'initiale_fixkosten' in economic_metrics %}
+                <div class="eco-box">
+                    <div class="eco-label">Initiale Fixkosten</div>
+                    <div class="eco-value highlight">{{ "{:,.2f}".format(economic_metrics.initiale_fixkosten.value) }} €
+                    </div>
+                    <div class="eco-desc">Einmalige Investition</div>
+                </div>
+                {% endif %}
+
+                {% if 'variable_kosten_jahr' in economic_metrics %}
+                <div class="eco-box">
+                    <div class="eco-label">Variable Kosten</div>
+                    <div class="eco-value highlight">{{ "{:,.2f}".format(economic_metrics.variable_kosten_jahr.value) }}
+                        €</div>
+                    <div class="eco-desc">pro Jahr</div>
+                </div>
+                {% endif %}
+
+                <style>
+                    .economic-card {
+                        background: #f8fafc;
+                    }
+
+                    .economic-grid {
+                        margin-bottom: 0;
+                    }
+
+                    .eco-box {
+                        background: #fff;
+                        border: 1px solid var(--line);
+                        border-radius: 12px;
+                        box-shadow: var(--shadow-md);
+                        padding: 1.5rem;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 0.5rem;
+                    }
+
+                    .eco-label {
+                        font-size: 1rem;
+                        color: #334155;
+                        font-weight: 600;
+                        margin-bottom: 0.25rem;
+                    }
+
+                    .eco-value {
+                        font-size: 2rem;
+                        font-weight: 700;
+                        color: var(--text);
+                        margin-bottom: 0.25rem;
+                    }
+
+                    .eco-value.accent {
+                        color: var(--accent);
+                    }
+
+                    .eco-value.highlight {
+                        color: #2563eb;
+                    }
+
+                    .eco-desc {
+                        font-size: 0.95rem;
+                        color: var(--muted);
+                    }
+                </style>
+            </div>
+
+            <div
+                style="margin-top:1rem; padding:1rem; background:rgba(56,189,248,0.1); border-radius:8px; border:1px solid rgba(56,189,248,0.3)">
+                <p style="margin:0; font-size:0.875rem; color:var(--text)">
+                    ℹ️ <strong>Hinweis:</strong> Diese Kennzahlen basieren auf Ihren Schätzungen und dienen als
+                    Orientierung.
+                    Für eine detaillierte Business-Case-Berechnung sollten weitere Faktoren berücksichtigt werden.
+                </p>
+            </div>
+        </section>
+        {% endif %}
+
+        <script>
+            function toggleDimension(id) {
+                const content = document.getElementById('content-' + id);
+                const icon = document.getElementById('icon-' + id);
+
+                if (content.classList.contains('expanded')) {
+                    content.classList.remove('expanded');
+                    icon.classList.remove('expanded');
+                } else {
+                    content.classList.add('expanded');
+                    icon.classList.add('expanded');
+                }
+            }
+        </script>
+
+        <!-- Interpretation -->
+        <section class="grid grid-2" style="margin-top:1rem">
+            <div class="card">
+                <h3 style="margin:.25rem 0">Interpretation</h3>
+                {% if recommendation == 'RPA' %}
+                <p>Die Bewertung begünstigt <strong>regelbasierte Automatisierung (RPA)</strong>. Prüfen Sie, ob
+                    Ausnahmen gering und Daten strukturiert sind.</p>
+                {% elif recommendation == 'IPA' %}
+                <p>Die Bewertung spricht für <strong>intelligente Prozessautomatisierung (IPA)</strong>. Indikatoren
+                    sind unstrukturierte Daten und variantenreiche Abläufe.</p>
+                {% elif recommendation == 'Neutral' %}
+                <p>Die Ergebnisse sind nahe beieinander. Empfohlen: Detailanalyse der Einflussfaktoren und ggf.
+                    Sensitivitätsanalyse.</p>
+                {% elif recommendation == 'Keine Automatisierung' %}
+                <p style="color:#991b1b; font-weight:600">⚠️ Beide Automatisierungsarten wurden ausgeschlossen.
+                    Überprüfen Sie die Prozesseignung.</p>
+                {% else %}
+                <p>Unvollständige Daten. Bitte prüfen Sie die Eingaben.</p>
+                {% endif %}
+            </div>
+            <div class="card">
+                <h3 style="margin:.25rem 0">Empfohlene Aktionen</h3>
+                <ul style="margin:.25rem 0 0 1rem">
+                    <li>Exportieren Sie die Ergebnisse für die Dokumentation.</li>
+                    <li>Führen Sie eine Detailanalyse der kritischen Dimensionen durch.</li>
+                    <li>Dokumentieren Sie Annahmen im Entscheidungsvorblatt.</li>
+                </ul>
+            </div>
+        </section>
+
+        <div class="actions">
+            <form method="get" action="{{ url_for('index') }}">
+                <button type="submit" class="secondary">Neuen Anwendungsfall bewerten</button>
+            </form>
+            <form method="get" action="{{ url_for('export_assessment', assessment_id=run_id) }}">
+                <button type="submit">Ergebnis exportieren</button>
+            </form>
+        </div>
+    </div>
+</body>
+
+</html>
